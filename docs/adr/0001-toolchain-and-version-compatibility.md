@@ -15,7 +15,7 @@ LinkOps Console targets Angular 22 and NestJS 11, holds all state in memory, and
 Only two, and both are environment rather than dependency:
 
 - **Node**: `24.18.0`, via `.nvmrc`
-- **Package manager**: `pnpm@10.29.1`, via the `packageManager` field, reproduced by `corepack enable` (documented fallback: `npm install -g pnpm@10.29.1`)
+- **Package manager**: `pnpm@11.21.0`, via the `packageManager` field, reproduced by `corepack enable` (documented fallback: `npm install -g pnpm@11.21.0`). The pin must always name the pnpm that actually wrote `pnpm-lock.yaml` — see [Corrections](#corrections) 6
 
 ### Versions Nx owns — we do not pin these
 
@@ -54,7 +54,7 @@ Nx installs Angular `22.0.4`, not the latest `22.1.4`. That is deliberate: the v
 | **OpenAPI** | `@nestjs/swagger@11.4.6` + `nestjs-zod@5.5.0` | `z.toJSONSchema()` and a hand-built document; `@nestjs/swagger` with hand-written `@ApiProperty()` DTO classes | The objection to `@nestjs/swagger` is its expectation of class DTOs — hand-writing them alongside the schemas would restate every rule and defeat [ADR-0006](./0006-shared-zod-schema-as-the-contract.md). `nestjs-zod`'s `createZodDto()` removes that objection by generating the class *from* the schema, so there is still one source of truth. It also supplies the validation pipe and response serializer, replacing code we would otherwise hand-roll — net less code, not more. `swagger-ui-dist@5.32.8` adds 11.7 MB unpacked, roughly 1% of this workspace's `node_modules`, which does not move install time |
 | **Client state** | Native Angular signals | `@ngrx/signals`, RxJS `BehaviorSubject` | No extra runtime dependency, and SSE frames are batched per tick ([ADR-0004](./0004-batched-per-tick-sse-framing.md)), so there is one signal update per second to manage — not a volume that justifies a store library |
 | **Test runner** | Vitest, workspace-wide | Jest server-side + Vitest client-side | One `pnpm test`. Costs an SWC transform on the Nest projects — [ADR-0002](./0002-unified-vitest-runner-and-swc-decorator-metadata.md) |
-| **Package manager** | pnpm `10.29.1` | npm, yarn | Strict about phantom dependencies, so a library that imports something it never declared fails at install rather than in production. That makes the layer boundaries real instead of conventional. `corepack enable` removes the first-run risk |
+| **Package manager** | pnpm `11.21.0` | npm, yarn | Strict about phantom dependencies, so a library that imports something it never declared fails at install rather than in production. That makes the layer boundaries real instead of conventional. `corepack enable` removes the first-run risk |
 | **A2UI** | In-house renderer | `@a2ui/angular@0.10.5` | Peer-deps `@angular/core: ^21.2.5` — incompatible with our Angular 22 — and peer-deps `@a2ui/markdown-it`. Verified against the registry 2026-08-14; `0.10.5` is the latest published version. See [ADR-0007](./0007-own-a2ui-renderer.md) |
 
 ## Consequences
@@ -83,3 +83,10 @@ Both numbers were invented. Neither had been measured, and neither is load-beari
 
 **5. "Two tag axes (`scope:`, `type:`)" → three (`platform:`, `domain:`, `type:`).**
 [ADR-0009](./0009-three-tag-axes-platform-domain-type.md) added a `domain:` axis and renamed `scope:` to `platform:`, but this record still described the original pair — so the two ADRs contradicted each other on the taxonomy that governs every library's tags. Corrected here rather than in ADR-0009, because ADR-0009 is the decision and this is a summary of it that went stale.
+
+**6. "pnpm `10.29.1`" → `11.21.0`, the version that actually ran.**
+`nx init` installed dependencies with the pnpm on the machine — **11.21.0** — so `pnpm-lock.yaml` was written by pnpm 11, and `nx init` omits the `packageManager` field entirely. Restoring the field with `10.29.1` would have pinned a package manager that has never run against this lockfile: `corepack enable` would fetch pnpm 10 on a clean machine, and any resolution difference between the two majors surfaces as a `--frozen-lockfile` failure at exactly the moment the install has to work first time. Lockfile format is not the risk — both majors write `lockfileVersion: '9.0'` — peer resolution is.
+
+The general rule this makes explicit: **the `packageManager` pin names whatever wrote the lockfile, and is re-read from the environment rather than carried forward from a plan.** Pinning a version verified to exist rather than verified to have run is the same error as Corrections 1 and 2, in a third place.
+
+Consequence: the husky `prepare`-script behaviour recorded during planning was observed on pnpm 10.29.1 and has to be re-confirmed on 11.21.0 when the hooks land, not assumed.
