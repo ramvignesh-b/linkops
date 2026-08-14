@@ -1,0 +1,31 @@
+# pnpm 11 refuses to install until every package carrying an install script is
+# explicitly allowed or denied. Every entry below is a decision, not a default —
+# which is the reason this project chose pnpm in the first place (ADR-0001).
+allowBuilds:
+  # Builds the native binary Nx's file-watching daemon depends on.
+  '@parcel/watcher': true
+
+  # The Console bundles with esbuild and the API's webpack build shells out to
+  # it too. Without its platform binary nothing builds at all.
+  esbuild: true
+
+  # Native storage and its msgpack accelerator, both behind the Angular CLI's
+  # build cache. Prebuilt binaries, so approving them costs no install time.
+  lmdb: true
+  msgpackr-extract: true
+
+  # Native resolver reaching us through jest-resolve. We run Vitest, not Jest
+  # (ADR-0002), so this is probably dead weight — but its chain runs through
+  # @nx/eslint, and a wrong denial would break the boundary lint that is the
+  # whole proof of the library taxonomy. Allowed rather than gambled on.
+  unrs-resolver: true
+
+  nx: true
+
+  # Denied deliberately.
+  # Nest's script only prints a funding notice.
+  '@nestjs/core': false
+  # Less arrives transitively through @nx/webpack. Both apps are styled with
+  # plain CSS and nothing authors a .less file, so its install script would run
+  # for a compiler this workspace never invokes.
+  less: false

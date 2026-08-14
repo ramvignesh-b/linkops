@@ -5,6 +5,7 @@ node_modules
 # Nx
 .nx/cache
 .nx/workspace-data
+.nx/migrate-runs
 
 # Build outputs
 dist
@@ -51,3 +52,7 @@ Thumbs.db
 *.sublime-workspace
 *.swp
 *.swo
+
+.angular
+
+__screenshots__/
