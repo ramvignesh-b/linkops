@@ -24,6 +24,9 @@ export default [
           style: 'kebab-case',
         },
       ],
+      '@angular-eslint/prefer-standalone': 'error',
+      '@angular-eslint/no-output-native': 'error',
+      '@angular-eslint/prefer-on-push-component-change-detection': 'error',
     },
   },
   {
