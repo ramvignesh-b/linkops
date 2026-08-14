@@ -20,6 +20,11 @@ allowBuilds:
   # whole proof of the library taxonomy. Allowed rather than gambled on.
   unrs-resolver: true
 
+  # The native SWC binary. Vitest transforms with esbuild, which does not
+  # implement emitDecoratorMetadata, so this is what lets Nest resolve DI by
+  # type in tests at all (ADR-0002).
+  '@swc/core': true
+
   nx: true
 
   # Denied deliberately.
@@ -29,3 +34,6 @@ allowBuilds:
   # plain CSS and nothing authors a .less file, so its install script would run
   # for a compiler this workspace never invokes.
   less: false
+  # Install-time analytics that reports back to a third party. Arrives through
+  # the Nest packages and is not needed to run any of them.
+  '@scarf/scarf': false
