@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # corepack otherwise stops to ask before fetching the pinned pnpm.
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # commitlint below reads from the root commit, so the whole history
+          # has to be present rather than the default shallow clone.
+          fetch-depth: 0
+
+      - name: Use the Node version the repo pins
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # corepack reads packageManager from package.json, so the pnpm running
+      # here is the same one that wrote the lockfile.
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Hooks are bypassable with --no-verify, so the whole history is checked
+      # here rather than trusting that every commit passed one on the way in.
+      - name: Commit messages
+        run: pnpm exec commitlint --from "$(git rev-list --max-parents=0 HEAD)" --to HEAD --verbose
+
+      # --max-warnings=0 is what makes the complexity and function-length rules
+      # binding; they are warnings locally so they do not block an edit midway.
+      - name: Lint
+        run: pnpm lint --max-warnings=0
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
