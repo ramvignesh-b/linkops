@@ -120,4 +120,21 @@ export default [
       'max-lines-per-function': 'off',
     },
   },
+  {
+    // Nest resolves constructor dependencies from the design:paramtypes
+    // metadata the compiler emits, and a type-only import erases the reference
+    // that metadata is built from. Autofixing an injected dependency to
+    // `import { type Foo }` still compiles and still builds — it fails at boot
+    // with "Nest can't resolve dependencies", which is the worst place to find
+    // out. The rule buys bundle hygiene, and the server has no bundle budget,
+    // so it is simply off here.
+    //
+    // It stays on for the Console, where bundle size is real. That is safe
+    // while dependencies are obtained with inject(); an Angular class using
+    // constructor injection would hit exactly the same erasure.
+    files: ['apps/api/**/*.ts', 'libs/server/**/*.ts'],
+    rules: {
+      '@typescript-eslint/consistent-type-imports': 'off',
+    },
+  },
 ];
