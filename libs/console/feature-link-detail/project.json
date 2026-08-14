@@ -1,0 +1,13 @@
+{
+  "name": "console-feature-link-detail",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/console/feature-link-detail/src",
+  "prefix": "lib",
+  "projectType": "library",
+  "tags": ["platform:console", "domain:links", "type:feature"],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    }
+  }
+}

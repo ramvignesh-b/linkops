@@ -1,0 +1,9 @@
+{
+  "name": "server-stream-api",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/stream-api/src",
+  "projectType": "library",
+  "tags": ["platform:server", "domain:telemetry", "type:feature"],
+  "// targets": "to see all targets run: nx show project server-stream-api --web",
+  "targets": {}
+}

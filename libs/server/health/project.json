@@ -1,0 +1,9 @@
+{
+  "name": "server-health",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/health/src",
+  "projectType": "library",
+  "tags": ["platform:server", "domain:platform", "type:feature"],
+  "// targets": "to see all targets run: nx show project server-health --web",
+  "targets": {}
+}

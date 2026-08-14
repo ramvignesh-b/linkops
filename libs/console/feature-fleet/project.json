@@ -1,0 +1,13 @@
+{
+  "name": "console-feature-fleet",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/console/feature-fleet/src",
+  "prefix": "lib",
+  "projectType": "library",
+  "tags": ["platform:console", "domain:fleet", "type:feature"],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    }
+  }
+}

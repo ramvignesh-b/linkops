@@ -1,0 +1,9 @@
+{
+  "name": "server-a2ui-agent",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/a2ui-agent/src",
+  "projectType": "library",
+  "tags": ["platform:server", "domain:assistant", "type:feature"],
+  "// targets": "to see all targets run: nx show project server-a2ui-agent --web",
+  "targets": {}
+}

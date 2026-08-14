@@ -1,0 +1,9 @@
+{
+  "name": "server-links-data-access",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/server/links-data-access/src",
+  "projectType": "library",
+  "tags": ["platform:server", "domain:links", "type:data-access"],
+  "// targets": "to see all targets run: nx show project server-links-data-access --web",
+  "targets": {}
+}

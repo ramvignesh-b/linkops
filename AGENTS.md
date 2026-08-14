@@ -31,13 +31,13 @@ Two hard limits on that voice:
 
 The active effort is `linkops`. Its working documents live in `.scratch/linkops/` and are **gitignored**, so a plain `grep`/`rg` will not find them — search that path explicitly.
 
-| File | What it is |
-|---|---|
-| `.scratch/linkops/map.md` | Wayfinder map — destination, decisions so far, open questions. **Start here.** |
-| `.scratch/linkops/environment-setup-plan.md` | Current source of truth for toolchain, versions and scaffolding |
-| `.scratch/linkops/plan.md` | Architecture plan. **Partially superseded twice** — its toolchain claims are wrong and seven further items are stale; read both warnings at its top before using it |
-| `.scratch/linkops/issues/` | Numbered tickets, `NN-<slug>.md`. Grilled decisions land under `## Answer`; the spec for a ticket is written into that same file by `/to-spec` — this effort has **no** `spec.md`, because it spans too many areas for one |
-| `.scratch/linkops/preserved-config/` | Pre-`nx init` config kept for reference only. Never restore these files — two of their version pins were unbuildable |
+| File                                         | What it is                                                                                                                                                                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.scratch/linkops/map.md`                    | Wayfinder map — destination, decisions so far, open questions. **Start here.**                                                                                                                                             |
+| `.scratch/linkops/environment-setup-plan.md` | Current source of truth for toolchain, versions and scaffolding                                                                                                                                                            |
+| `.scratch/linkops/plan.md`                   | Architecture plan. **Partially superseded twice** — its toolchain claims are wrong and seven further items are stale; read both warnings at its top before using it                                                        |
+| `.scratch/linkops/issues/`                   | Numbered tickets, `NN-<slug>.md`. Grilled decisions land under `## Answer`; the spec for a ticket is written into that same file by `/to-spec` — this effort has **no** `spec.md`, because it spans too many areas for one |
+| `.scratch/linkops/preserved-config/`         | Pre-`nx init` config kept for reference only. Never restore these files — two of their version pins were unbuildable                                                                                                       |
 
 Never hand-pin `typescript`, `@angular/*`, `vitest` or `@nx/*` versions. They are Nx-managed, and hand-pinning them is what broke this workspace once already.
 
@@ -54,3 +54,27 @@ The user can also log one deliberately with `/override`.
 ### Teaching & Study Workspace
 
 All interactive lessons, reference sheets, learning records, and study resources produced by `/teach` must live in `docs/study/` (e.g. `docs/study/lessons/`, `docs/study/reference/`, `docs/study/learning-records/`, `docs/study/MISSION.md`, `docs/study/RESOURCES.md`) to keep the repository root clean.
+
+<!-- nx configuration start-->
+<!-- Leave the start & end comments to automatically receive updates. -->
+
+## General Guidelines for working with Nx
+
+- For navigating/exploring the workspace, invoke the `nx-workspace` skill first - it has patterns for querying projects, targets, and dependencies
+- When running tasks (for example build, lint, test, e2e, etc.), always prefer running the task through `nx` (i.e. `nx run`, `nx run-many`, `nx affected`) instead of using the underlying tooling directly
+- Prefix nx commands with the workspace's package manager (e.g., `pnpm nx build`, `npm exec nx test`) - avoids using globally installed CLI
+- You have access to the Nx MCP server and its tools, use them to help the user
+- For Nx plugin best practices, check `node_modules/@nx/<plugin>/PLUGIN.md`. Not all plugins have this file - proceed without it if unavailable.
+- NEVER guess CLI flags - always check nx_docs or `--help` first when unsure
+
+## Scaffolding & Generators
+
+- For scaffolding tasks (creating apps, libs, project structure, setup), ALWAYS invoke the `nx-generate` skill FIRST before exploring or calling MCP tools
+
+## When to use nx_docs
+
+- USE for: advanced config options, unfamiliar flags, migration guides, plugin configuration, edge cases
+- DON'T USE for: basic generator syntax (`nx g @nx/react:app`), standard commands, things you already know
+- The `nx-generate` skill handles generator discovery internally - don't call nx_docs just to look up generator syntax
+
+<!-- nx configuration end-->

@@ -1,0 +1,13 @@
+{
+  "name": "console-data-access",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/console/data-access/src",
+  "prefix": "lib",
+  "projectType": "library",
+  "tags": ["platform:console", "domain:platform", "type:data-access"],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    }
+  }
+}

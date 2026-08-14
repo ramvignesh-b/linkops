@@ -16,7 +16,33 @@
     "strict": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
-    "paths": {}
+    "paths": {
+      "@linkops/shared/domain": ["./libs/shared/domain/src/index.ts"],
+      "@linkops/shared/a2ui-protocol": [
+        "./libs/shared/a2ui-protocol/src/index.ts"
+      ],
+      "@linkops/server/links-data-access": [
+        "./libs/server/links-data-access/src/index.ts"
+      ],
+      "@linkops/server/telemetry": ["./libs/server/telemetry/src/index.ts"],
+      "@linkops/server/links-api": ["./libs/server/links-api/src/index.ts"],
+      "@linkops/server/stream-api": ["./libs/server/stream-api/src/index.ts"],
+      "@linkops/server/a2ui-agent": ["./libs/server/a2ui-agent/src/index.ts"],
+      "@linkops/server/health": ["./libs/server/health/src/index.ts"],
+      "@linkops/console/ui": ["./libs/console/ui/src/index.ts"],
+      "@linkops/console/data-access": [
+        "./libs/console/data-access/src/index.ts"
+      ],
+      "@linkops/console/feature-fleet": [
+        "./libs/console/feature-fleet/src/index.ts"
+      ],
+      "@linkops/console/feature-link-detail": [
+        "./libs/console/feature-link-detail/src/index.ts"
+      ],
+      "@linkops/console/feature-assistant": [
+        "./libs/console/feature-assistant/src/index.ts"
+      ]
+    }
   },
   "exclude": ["node_modules", "tmp"]
 }

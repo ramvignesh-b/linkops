@@ -40,6 +40,13 @@ docs/decisions
 # Claude Code: project commands are shared, per-user settings are not
 .claude/settings.local.json
 
+# AI agent tooling from `nx configure-ai-agents`. Useful locally for the Nx MCP
+# server and its skills; not part of the product, so it stays out of the repo.
+.agents/
+.gemini/
+.claude/settings.json
+CLAUDE.md
+
 # IDE & OS
 .DS_Store
 Thumbs.db
@@ -56,3 +63,7 @@ Thumbs.db
 .angular
 
 __screenshots__/
+
+vitest.config.*.timestamp*
+.nx/polygraph
+.claude/worktrees
