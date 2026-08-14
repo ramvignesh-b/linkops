@@ -61,6 +61,13 @@
     "lint": {
       "executor": "@nx/eslint:lint"
     },
+    "typecheck": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p apps/console/tsconfig.app.json --noEmit"
+      }
+    },
     "test": {
       "executor": "@angular/build:unit-test",
       "options": {
