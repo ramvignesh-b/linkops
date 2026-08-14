@@ -4,3 +4,8 @@
 /.nx/cache
 /.nx/workspace-data
 .angular
+
+# Markdown is written, not generated. Prettier re-pads every cell of a table
+# when one cell changes, so a one-line edit reads as a whole-table rewrite —
+# and these documents are edited by exact text match, which that breaks.
+*.md
