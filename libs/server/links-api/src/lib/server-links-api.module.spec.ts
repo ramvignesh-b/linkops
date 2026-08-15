@@ -263,6 +263,42 @@ describe('PATCH /links/:id', () => {
   });
 });
 
+describe('DELETE /links/:id', () => {
+  const server = useServer();
+
+  it('returns 204 with no body for a seeded Link', async () => {
+    const response = await request(server()).delete('/links/lnk_0001');
+
+    expect(response.status).toBe(204);
+    expect(response.body).toEqual({});
+  });
+
+  it('answers an unknown id with the project error envelope', async () => {
+    const response = await request(server()).delete('/links/lnk_9999');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: {
+        code: 'LINK_NOT_FOUND',
+        message: 'Link lnk_9999 not found',
+        details: { id: 'lnk_9999' },
+      },
+    });
+  });
+
+  it('removes the Link from a subsequent GET /links and GET /links/:id', async () => {
+    await request(server()).delete('/links/lnk_0001');
+
+    const list = await request(server()).get('/links');
+    expect(
+      list.body.some((link: { id: string }) => link.id === 'lnk_0001'),
+    ).toBe(false);
+
+    const read = await request(server()).get('/links/lnk_0001');
+    expect(read.status).toBe(404);
+  });
+});
+
 /**
  * The endpoint-by-endpoint tests above each hold one boundary still. This one
  * runs the sequence an operator actually performs, against one app instance,

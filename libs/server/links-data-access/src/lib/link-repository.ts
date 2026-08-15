@@ -83,8 +83,7 @@ export type UpdateLinkResult =
   | { ok: false; reason: 'version-conflict'; current: LinkRecord };
 
 /**
- * The read, create and update surface this ticket needs. `delete` joins this
- * interface with the ticket that needs it.
+ * The read, create, update and delete surface this project needs.
  */
 export interface LinkRepository {
   findById(id: LinkId): LinkRecord | undefined;
@@ -95,5 +94,7 @@ export interface LinkRepository {
     patch: LinkDraftPatch,
     expectedVersion: number,
   ): UpdateLinkResult;
+  /** Reports whether a Link was there to remove — `false` is not an error. */
+  delete(id: LinkId): boolean;
   count(): number;
 }
