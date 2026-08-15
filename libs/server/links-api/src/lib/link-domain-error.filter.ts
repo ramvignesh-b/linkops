@@ -8,6 +8,7 @@ import {
 } from '@linkops/shared/domain';
 import { LinkNameTakenError } from './errors/link-name-taken.error';
 import { LinkNotFoundError } from './errors/link-not-found.error';
+import { LinkVersionConflictError } from './errors/link-version-conflict.error';
 
 /**
  * The one place domain-error → HTTP-status mapping happens. Everything it
@@ -45,6 +46,19 @@ export class LinkDomainErrorFilter extends BaseExceptionFilter {
         code: 'LINK_NAME_TAKEN',
         message: exception.message,
         details: { name: exception.linkName },
+      });
+
+      return;
+    }
+
+    if (exception instanceof LinkVersionConflictError) {
+      this.respond(host, 409, {
+        code: 'LINK_VERSION_CONFLICT',
+        message: exception.message,
+        details: {
+          currentVersion: exception.current.version,
+          current: exception.current,
+        },
       });
 
       return;

@@ -32,6 +32,13 @@ export type LinkDraft = Omit<
 >;
 
 /**
+ * Any subset of the editable fields — an operator edits what they changed.
+ * Named for the draft it patches, not for `linkPatchSchema`: this one carries
+ * no `version`, because the version travels as `update`'s own argument.
+ */
+export type LinkDraftPatch = Partial<LinkDraft>;
+
+/**
  * `band` and `q` are the only fields the repository filters on — `status` is
  * derived from Samples the repository has never seen, so status filtering
  * lives above it, in `server/links-api`.
@@ -55,14 +62,38 @@ export type CreateLinkResult =
   | { ok: false; reason: 'name-taken' };
 
 /**
- * The read and create surface this ticket needs. `update` and `delete` join
- * this interface with the tickets that need them (editing and deleting a
- * Link) — per ADR-0008, `update(id, patch, expectedVersion)` returns a
- * result, never a throw, because the repository knows nothing about HTTP.
+ * Every way `update` can decline, and the compare-and-swap itself. Per
+ * ADR-0008 the expected version is an argument rather than a field on the
+ * patch, so a write that skips the version check cannot be expressed. The
+ * conflict case carries the whole current record, not just its version: that
+ * is what lets the Console show theirs-versus-mine field by field instead of
+ * telling an operator to reload and find the difference by eye.
+ *
+ * `not-found` and `name-taken` are results here for the same reason
+ * `create`'s duplicate name is — the repository has no idea it is serving
+ * HTTP, so it reports rather than throws.
+ */
+export type UpdateLinkResult =
+  | { ok: true; link: LinkRecord }
+  | { ok: false; reason: 'not-found' }
+  // Carries the offending name, where `CreateLinkResult` does not: a create
+  // body always has a name, so its caller still holds it, but a patch's name
+  // is optional and only the repository knows a rename was attempted at all.
+  | { ok: false; reason: 'name-taken'; name: string }
+  | { ok: false; reason: 'version-conflict'; current: LinkRecord };
+
+/**
+ * The read, create and update surface this ticket needs. `delete` joins this
+ * interface with the ticket that needs it.
  */
 export interface LinkRepository {
   findById(id: LinkId): LinkRecord | undefined;
   findAll(filter?: LinkFilter): LinkRecord[];
   create(draft: LinkDraft): CreateLinkResult;
+  update(
+    id: LinkId,
+    patch: LinkDraftPatch,
+    expectedVersion: number,
+  ): UpdateLinkResult;
   count(): number;
 }

@@ -1,4 +1,9 @@
-import type { LinkDraft, LinkRepository } from './link-repository';
+import { toLinkId } from '@linkops/shared/domain';
+import type {
+  LinkDraft,
+  LinkRepository,
+  UpdateLinkResult,
+} from './link-repository';
 
 const draft = (overrides: Partial<LinkDraft> = {}): LinkDraft => ({
   name: 'North Ridge to Depot',
@@ -97,6 +102,147 @@ function findAllContract(createRepository: () => LinkRepository) {
   });
 }
 
+/** One Link, already created, since every update case starts from one. */
+function seedOne(createRepository: () => LinkRepository) {
+  const repository = createRepository();
+  const created = repository.create(draft());
+  if (!created.ok) throw new Error('expected create to succeed');
+
+  return { repository, link: created.link };
+}
+
+function updateVersionContract(createRepository: () => LinkRepository) {
+  describe('the compare-and-swap', () => {
+    it('applies the patch at the matching version and hands back the next version', () => {
+      const { repository, link } = seedOne(createRepository);
+
+      const result = repository.update(
+        link.id,
+        { txPowerDbm: 25 },
+        link.version,
+      );
+
+      expect(result).toEqual({
+        ok: true,
+        link: expect.objectContaining({
+          id: link.id,
+          txPowerDbm: 25,
+          version: link.version + 1,
+        }),
+      });
+    });
+
+    it('refuses a stale version and hands back the whole current Link, not just its version', () => {
+      const { repository, link } = seedOne(createRepository);
+      const first = repository.update(
+        link.id,
+        { txPowerDbm: 25 },
+        link.version,
+      );
+      if (!first.ok) throw new Error('expected the first update to succeed');
+
+      const second = repository.update(
+        link.id,
+        { txPowerDbm: 30 },
+        link.version,
+      );
+
+      expect(second).toEqual({
+        ok: false,
+        reason: 'version-conflict',
+        current: first.link,
+      });
+    });
+
+    it('reports an unknown id as a result rather than throwing', () => {
+      const repository = createRepository();
+
+      let result: UpdateLinkResult | undefined;
+      expect(() => {
+        result = repository.update(toLinkId('lnk_9999'), { txPowerDbm: 25 }, 1);
+      }).not.toThrow();
+
+      expect(result).toEqual({ ok: false, reason: 'not-found' });
+    });
+  });
+}
+
+function updateNameContract(createRepository: () => LinkRepository) {
+  describe('renaming', () => {
+    it('refuses a rename onto a name another Link already holds', () => {
+      const { repository } = seedOne(createRepository);
+      const other = repository.create(
+        draft({ name: 'Depot to Warehouse', siteA: 'Depot' }),
+      );
+      if (!other.ok) throw new Error('expected create to succeed');
+
+      const result = repository.update(
+        other.link.id,
+        { name: 'North Ridge to Depot' },
+        other.link.version,
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        reason: 'name-taken',
+        name: 'North Ridge to Depot',
+      });
+      expect(repository.findById(other.link.id)).toEqual(other.link);
+    });
+
+    it('allows a Link to keep its own name, since that is not a collision', () => {
+      const { repository, link } = seedOne(createRepository);
+
+      const result = repository.update(
+        link.id,
+        { name: link.name, txPowerDbm: 25 },
+        link.version,
+      );
+
+      expect(result.ok).toBe(true);
+    });
+  });
+}
+
+function updateRecordContract(createRepository: () => LinkRepository) {
+  describe('what an edit may not disturb', () => {
+    it('returns a Link that is not the stored instance', () => {
+      const { repository, link } = seedOne(createRepository);
+
+      const result = repository.update(
+        link.id,
+        { txPowerDbm: 25 },
+        link.version,
+      );
+      if (!result.ok) throw new Error('expected update to succeed');
+      result.link.name = 'Corrupted';
+
+      expect(repository.findById(link.id)?.name).toBe('North Ridge to Depot');
+    });
+
+    it('never moves createdAt', () => {
+      const { repository, link } = seedOne(createRepository);
+
+      const result = repository.update(
+        link.id,
+        { txPowerDbm: 25 },
+        link.version,
+      );
+      if (!result.ok) throw new Error('expected update to succeed');
+
+      expect(result.link.createdAt).toBe(link.createdAt);
+    });
+  });
+}
+
+function updateContract(createRepository: () => LinkRepository) {
+  describe('update', () => {
+    updateVersionContract(createRepository);
+    updateNameContract(createRepository);
+    updateRecordContract(createRepository);
+  });
+}
+
 /**
  * A reusable contract suite, bound to a factory rather than a class. ADR-0008
  * claims that swapping in a real store touches one file — a suite bound to
@@ -109,5 +255,6 @@ export function runLinkRepositoryContract(
   describe('LinkRepository contract', () => {
     createContract(createRepository);
     findAllContract(createRepository);
+    updateContract(createRepository);
   });
 }

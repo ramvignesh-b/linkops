@@ -143,6 +143,66 @@ The DTO validating this body is generated from `linkCreateSchema` with
 `createZodDto()`, and validated by `nestjs-zod`'s pipe, registered globally —
 there is no hand-rolled validation pipe anywhere in this API.
 
+### `PATCH /api/links/:id`
+
+Edits a Link. The body carries any subset of the eight editable fields plus
+the `version` the operator was looking at, and returns the whole Link at the
+next version with `updatedAt` moved. `createdAt` never changes.
+
+```json
+{ "version": 1, "capacityMbps": 500 }
+```
+
+`version` is **required**, and required by `linkPatchSchema` rather than by a
+check in the handler — an edit that names no version cannot be represented, so
+there is no code path in which one lands without a compare-and-swap. That
+asymmetry (every editable field optional, `version` mandatory) is the whole of
+optimistic concurrency expressed in a schema.
+
+If the `version` no longer matches, the answer is `409` `LINK_VERSION_CONFLICT`
+carrying the **whole** current Link, not just its version number:
+
+```json
+{
+  "error": {
+    "code": "LINK_VERSION_CONFLICT",
+    "message": "...",
+    "details": {
+      "currentVersion": 2,
+      "current": {
+        "id": "lnk_0001",
+        "name": "North Ridge to Depot",
+        "siteA": "North Ridge",
+        "siteB": "Depot",
+        "band": "5GHz",
+        "mode": "PtP",
+        "capacityMbps": 500,
+        "txPowerDbm": 20,
+        "channelWidthMhz": 40,
+        "status": { "status": "down", "reason": "stale" },
+        "version": 2,
+        "createdAt": "2026-08-15T09:00:00.000Z",
+        "updatedAt": "2026-08-15T09:04:00.000Z"
+      }
+    }
+  }
+}
+```
+
+Carrying the whole Link is the load-bearing part: it lets the Console show
+theirs-versus-mine field by field. A response saying only "someone changed
+this, reload" throws the operator's work away and makes them find the
+difference by eye.
+
+Renaming a Link onto a name another Link already holds returns `409`
+`LINK_NAME_TAKEN`; resending a Link's own name is a no-op, not a collision. An
+unknown id returns `404` `LINK_NOT_FOUND`.
+
+The compare-and-swap lives in the repository signature —
+`update(id, patch, expectedVersion)`, never `save(link)` — so a write that
+skips the version check cannot be expressed. See
+[ADR-0008](docs/adr/0008-repository-interface-carries-the-version-check.md).
+
 ### Errors
 
 Every failure this API produces — across this endpoint and every one that
@@ -176,10 +236,10 @@ passes through as Nest's default response instead, so a second client can
 tell "the Server said no" from "something else broke" by whether the body
 matches this shape at all.
 
-`LINK_NOT_FOUND`, `LINK_NAME_TAKEN` and `VALIDATION_FAILED` are produced by
-the endpoints in this slice; `LINK_VERSION_CONFLICT` and `A2UI_INVALID_PAYLOAD`
-are declared now, ahead of the endpoints that produce them, so a client's
-exhaustive `switch` on `code` never has to grow between slices.
+Every code above except `A2UI_INVALID_PAYLOAD` is produced by the endpoints
+documented here; that one is declared now, ahead of the endpoint that produces
+it, so a client's exhaustive `switch` on `code` never has to grow between
+slices.
 
 ## Development
 

@@ -175,3 +175,174 @@ describe('POST /links', () => {
     });
   });
 });
+
+describe('PATCH /links/:id', () => {
+  let app: INestApplication;
+
+  beforeEach(async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [ServerLinksApiModule],
+    }).compile();
+
+    app = moduleRef.createNestApplication();
+    await app.init();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await app.close();
+  });
+
+  it('applies an edit carrying the matching version and returns the Link at the next one', async () => {
+    const response = await request(app.getHttpServer())
+      .patch('/links/lnk_0001')
+      .send({ version: 1, txPowerDbm: 25 });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      id: 'lnk_0001',
+      txPowerDbm: 25,
+      version: 2,
+    });
+  });
+
+  it('answers a stale version with the whole current Link, so a conflict can be shown field by field', async () => {
+    await request(app.getHttpServer())
+      .patch('/links/lnk_0001')
+      .send({ version: 1, txPowerDbm: 25 });
+
+    const response = await request(app.getHttpServer())
+      .patch('/links/lnk_0001')
+      .send({ version: 1, txPowerDbm: 30 });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('LINK_VERSION_CONFLICT');
+    expect(response.body.error.details.currentVersion).toBe(2);
+    expect(response.body.error.details.current).toMatchObject({
+      id: 'lnk_0001',
+      name: 'North Ridge to Depot',
+      txPowerDbm: 25,
+      version: 2,
+      status: { status: 'down', reason: 'stale' },
+    });
+  });
+
+  it('rejects a body with no version through the schema, naming version as the offending field', async () => {
+    const response = await request(app.getHttpServer())
+      .patch('/links/lnk_0001')
+      .send({ txPowerDbm: 25 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_FAILED');
+    expect(response.body.error.details.issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: 'version' })]),
+    );
+  });
+
+  it('refuses a rename onto a name another Link already holds', async () => {
+    const response = await request(app.getHttpServer())
+      .patch('/links/lnk_0001')
+      .send({ version: 1, name: 'Depot to Warehouse' });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: {
+        code: 'LINK_NAME_TAKEN',
+        message: expect.any(String),
+        details: { name: 'Depot to Warehouse' },
+      },
+    });
+  });
+
+  it('answers an unknown id with the project error envelope', async () => {
+    const response = await request(app.getHttpServer())
+      .patch('/links/lnk_9999')
+      .send({ version: 1, txPowerDbm: 25 });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: {
+        code: 'LINK_NOT_FOUND',
+        message: 'Link lnk_9999 not found',
+        details: { id: 'lnk_9999' },
+      },
+    });
+  });
+
+  // Only `Date` is faked: the real timers have to keep running or the
+  // supertest round trip below would never resolve. A frozen clock is the
+  // only way to assert `updatedAt` *moved* — two writes landing in the same
+  // millisecond produce the same ISO string, which would make this flaky.
+  it('moves updatedAt and leaves createdAt where it was', async () => {
+    const before = await request(app.getHttpServer()).get('/links/lnk_0001');
+    const { createdAt, updatedAt } = before.body.link;
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(new Date(updatedAt).getTime() + 60_000));
+    const response = await request(app.getHttpServer())
+      .patch('/links/lnk_0001')
+      .send({ version: 1, txPowerDbm: 25 });
+
+    expect(response.body.createdAt).toBe(createdAt);
+    expect(response.body.updatedAt).not.toBe(updatedAt);
+  });
+});
+
+/**
+ * The endpoint-by-endpoint tests above each hold one boundary still. This one
+ * runs the sequence an operator actually performs, against one app instance,
+ * so a Link created by `POST` is the same Link `GET` reads and `PATCH` edits —
+ * the coupling no isolated test can see.
+ */
+describe('a Link through its lifecycle', () => {
+  let app: INestApplication;
+
+  beforeEach(async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [ServerLinksApiModule],
+    }).compile();
+
+    app = moduleRef.createNestApplication();
+    await app.init();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('is seeded, created, read, edited, and refuses the second edit at the version the first consumed', async () => {
+    const server = app.getHttpServer();
+
+    const seeded = await request(server).get('/links');
+    expect(seeded.status).toBe(200);
+    expect(seeded.body).toHaveLength(10);
+
+    const created = await request(server).post('/links').send(validCreateBody);
+    expect(created.status).toBe(201);
+    expect(created.body.version).toBe(1);
+    const id: string = created.body.id;
+
+    const read = await request(server).get(`/links/${id}`);
+    expect(read.status).toBe(200);
+    expect(read.body.latestSample).toBeNull();
+    expect(read.body.link).toMatchObject({ id, version: 1 });
+
+    const edited = await request(server)
+      .patch(`/links/${id}`)
+      .send({ version: 1, capacityMbps: 500 });
+    expect(edited.status).toBe(200);
+    expect(edited.body).toMatchObject({ id, capacityMbps: 500, version: 2 });
+
+    const stale = await request(server)
+      .patch(`/links/${id}`)
+      .send({ version: 1, capacityMbps: 600 });
+    expect(stale.status).toBe(409);
+    expect(stale.body).toEqual({
+      error: {
+        code: 'LINK_VERSION_CONFLICT',
+        message: expect.any(String),
+        details: { currentVersion: 2, current: edited.body },
+      },
+    });
+  });
+});
