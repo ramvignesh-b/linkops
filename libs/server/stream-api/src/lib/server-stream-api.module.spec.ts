@@ -141,13 +141,21 @@ describe('the per-Tick frames', () => {
       expect(fleetSummarySchema.parse(frame.data).total).toBe(10);
     }
 
-    // Within a Tick the readings arrive before the Summary describing them.
-    expect(client.frames.slice(1, 5).map((frame) => frame.event)).toEqual([
-      'link.telemetry',
-      'fleet.summary',
-      'link.telemetry',
-      'fleet.summary',
-    ]);
+    // Within each Tick the readings arrive before the Summary describing
+    // them, the Summary is always last, and nothing but a `link.status`
+    // transition sits between them — every seeded Link's first-ever Sample
+    // flips it off `down: stale` on Tick 1.
+    for (let tickNumber = 1; tickNumber <= 10; tickNumber++) {
+      const events = client.frames
+        .filter((frame) => frame.id === String(tickNumber))
+        .map((frame) => frame.event);
+
+      expect(events[0]).toBe('link.telemetry');
+      expect(events.at(-1)).toBe('fleet.summary');
+      expect(
+        events.slice(1, -1).every((event) => event === 'link.status'),
+      ).toBe(true);
+    }
   });
 });
 
