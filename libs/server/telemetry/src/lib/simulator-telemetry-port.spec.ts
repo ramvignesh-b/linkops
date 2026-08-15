@@ -4,27 +4,10 @@ import type {
   LinkRepository,
 } from '@linkops/server/links-data-access';
 import type { TelemetrySample } from '@linkops/shared/domain';
+import { link } from './link-record.fixture';
 import { SimulatorTelemetryPort } from './simulator-telemetry-port';
 import { TelemetrySampleStore } from './telemetry-sample-store';
 import type { Clock } from './clock';
-
-function link(overrides: Partial<LinkRecord> = {}): LinkRecord {
-  return {
-    id: toLinkId('lnk_0001'),
-    name: 'North Ridge to Depot',
-    siteA: 'North Ridge',
-    siteB: 'Depot',
-    band: '5GHz',
-    mode: 'PtP',
-    capacityMbps: 300,
-    txPowerDbm: 20,
-    channelWidthMhz: 40,
-    version: 1,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-    ...overrides,
-  };
-}
 
 function sample(overrides: Partial<TelemetrySample> = {}): TelemetrySample {
   return {

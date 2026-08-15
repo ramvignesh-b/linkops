@@ -9,7 +9,7 @@ import type { Random } from './random';
 // walks around one fixed, healthy target.
 const RSSI_TARGET_DBM = -55;
 // The schema only caps rssiDbm at 0; this floor is not a schema requirement,
-// just a sanity backstop so the walk stays a plausible reading even under
+// just a sanity backstop so the walk stays a plausible Sample even under
 // adversarial noise, instead of drifting to an arbitrarily large negative.
 const RSSI_FLOOR_DBM = -100;
 
@@ -26,8 +26,8 @@ const SNR_AT_FULL_CAPACITY_DB = 30;
 
 const RSSI_NOISE_DB = 2;
 const SNR_NOISE_DB = 2;
-// Throughput's own noise, independent of snrDb's — a real link's traffic
-// jitters on its own, not only as a function of signal quality.
+// Throughput's own noise, independent of snrDb's — real Throughput jitters
+// on its own, not only as a function of signal quality.
 const THROUGHPUT_NOISE_RATIO = 0.05;
 
 const REVERSION_RATE = 0.3;

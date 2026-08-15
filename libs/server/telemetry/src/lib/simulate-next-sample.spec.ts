@@ -41,7 +41,7 @@ describe('simulateNextSample', () => {
     expect(result.snrDb).toBe(25);
   });
 
-  it('mean-reverts a previous reading toward the target rather than jumping to it', () => {
+  it('mean-reverts a previous Sample toward the target rather than jumping to it', () => {
     const previous = previousAt({ rssiDbm: -1, snrDb: 1 });
 
     const result = simulateNextSample(link, previous, now, midpoint);
@@ -51,7 +51,7 @@ describe('simulateNextSample', () => {
     expect(result.snrDb).toBeCloseTo(1 + 0.3 * (25 - 1));
   });
 
-  it('moves further from the previous reading toward target than a smaller reversion would', () => {
+  it('moves further from the previous Sample toward target than a smaller reversion would', () => {
     const nearTarget = simulateNextSample(
       link,
       previousAt({ snrDb: 24 }),
@@ -81,7 +81,7 @@ describe('simulateNextSample', () => {
     expect(high.rssiDbm).toBeGreaterThan(-55);
   });
 
-  it('clamps rssiDbm to the schema ceiling of 0 even from a corrupt previous reading', () => {
+  it('clamps rssiDbm to the schema ceiling of 0 even from a corrupt previous Sample', () => {
     const previous = previousAt({ rssiDbm: 1000 });
 
     const result = simulateNextSample(link, previous, now, midpoint);
@@ -97,7 +97,7 @@ describe('simulateNextSample', () => {
       () => 1,
     );
 
-    // No real reading is beyond this — an independent sanity bound, not the
+    // No real Sample is beyond this — an independent sanity bound, not the
     // implementation's own floor/ceiling restated.
     expect(result.rssiDbm).toBeGreaterThanOrEqual(-1_000);
     expect(result.snrDb).toBeLessThanOrEqual(1_000);

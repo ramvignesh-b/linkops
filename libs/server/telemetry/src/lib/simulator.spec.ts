@@ -3,29 +3,12 @@ import type {
   LinkRecord,
   LinkRepository,
 } from '@linkops/server/links-data-access';
+import { link } from './link-record.fixture';
 import { Simulator } from './simulator';
 import { TelemetrySampleStore } from './telemetry-sample-store';
 import { TelemetryBus } from './telemetry-bus';
 import { systemClock } from './clock';
 import type { Random } from './random';
-
-function link(overrides: Partial<LinkRecord> = {}): LinkRecord {
-  return {
-    id: toLinkId('lnk_0001'),
-    name: 'North Ridge to Depot',
-    siteA: 'North Ridge',
-    siteB: 'Depot',
-    band: '5GHz',
-    mode: 'PtP',
-    capacityMbps: 300,
-    txPowerDbm: 20,
-    channelWidthMhz: 40,
-    version: 1,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-    ...overrides,
-  };
-}
 
 /** A Roster the test can mutate mid-run, exactly like a real fleet changing. */
 function fakeRepository(
