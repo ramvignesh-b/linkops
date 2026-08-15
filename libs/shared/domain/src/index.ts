@@ -3,6 +3,7 @@ export * from './lib/link-status';
 export * from './lib/link';
 export * from './lib/link-create';
 export * from './lib/link-patch';
+export * from './lib/link-list-query';
 export * from './lib/telemetry-sample';
 export * from './lib/fleet-summary';
 export * from './lib/derive-status';
