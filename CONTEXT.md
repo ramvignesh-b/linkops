@@ -20,7 +20,7 @@ _Avoid_: network, cluster, estate
 The Links themselves — the configurations. Changes only on create and delete, never on a tick.
 
 **Fleet Summary**:
-The aggregate counts and totals across the fleet (how many up, degraded, down; total throughput). Computed on the server, recomputed every tick, and never a source of membership: a Link's absence from a Summary means nothing.
+The aggregate counts and totals across the fleet (how many up, degraded, down; total throughput), and the `worstLinkId` (the reporting Link with the lowest SNR). Computed on the server, recomputed every tick, and never a source of membership: a Link's absence from a Summary means nothing.
 _Avoid_: KPIs, stats, overview
 
 **Fleet Snapshot**:
@@ -39,6 +39,10 @@ Any consumer of the API — the Console is one, a `curl -N` on the stream is ano
 **Server**:
 The runtime the API and the Simulator share. A description of where code runs, not of what it does — which is why the Simulator lives there without being an API.
 _Avoid_: backend, API (the API is one part of the server, not the whole)
+
+**Simulator**:
+The single process that produces every Telemetry Sample for the whole Fleet, one Tick at a time. One fleet-wide instance, never a timer per Link — it reads the Roster fresh each Tick, so a Link's creation or deletion needs no code of its own to reach it.
+_Avoid_: engine, generator, mock service
 
 ### Radio
 
@@ -84,6 +88,9 @@ _Avoid_: metric, datapoint, reading, measurement
 **Tick**:
 One iteration of the fleet-wide simulator interval — one second. The unit of change in this system: every Sample in a batch shares a Tick, and a Tick is what a stream frame corresponds to.
 
+**Ring Buffer**:
+The bounded, per-Link storage for live Telemetry Samples. Allocated lazily on the first Sample, and evicted completely the instant a Link is deleted to prevent leaks.
+
 **Degradation Episode**:
 A deliberate multi-Tick excursion the Simulator drives a Link through so the console actually shows degraded links. It has a start and an end, and it is *simulated behaviour*, not a fault — distinct from a Link genuinely being `down`.
 _Avoid_: outage, incident, failure, event
@@ -103,3 +110,11 @@ _Avoid_: hang, freeze, lag
 **Leak**:
 A resource that outlives the thing that needed it — a stream subscription surviving its disconnected client, a simulator interval surviving shutdown, a ring buffer surviving its deleted Link, telemetry accumulating without bound. Named as a distinct concept because a console that runs alongside the device it manages is long-lived by definition: a leak has hours or days to become an outage, so "no leaks" is a claim that has to be *demonstrated*, not asserted.
 _Avoid_: memory issue, resource issue
+
+### Errors and Failures
+
+**Error Envelope**:
+The standard `{ error: { code, message, details } }` wrapper returned for all API-level domain and validation failures. The `message` is diagnostic prose for developers and logs. The `code` is a stable discriminant the Console uses to look up operator-facing copy, because the Server cannot know where the error lands in the UI.
+
+**Transport Failure**:
+A failure where the Server did not answer (e.g., a dropped stream, a timeout, or a 502 from a proxy), as distinct from an Error Envelope where the Server answered "no". Handled separately so the Console never synthesizes a fake envelope for an unreachable API.
