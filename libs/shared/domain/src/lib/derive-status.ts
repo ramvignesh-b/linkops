@@ -1,3 +1,4 @@
+import type { Link } from './link';
 import type { LinkStatus } from './link-status';
 import type { TelemetrySample } from './telemetry-sample';
 
@@ -56,4 +57,20 @@ export function deriveStatus(
   }
 
   return { status: 'down', reason: 'metrics' };
+}
+
+/**
+ * A stored Link as any surface presents it: the record it holds plus the
+ * Status derived from its most recent Sample. Shared rather than written
+ * once per surface, because the REST reads and the stream have to agree
+ * about a Link's Status at a given instant — one presenter is what makes
+ * that true by construction rather than by two implementations happening to
+ * match.
+ */
+export function withDerivedStatus(
+  record: Omit<Link, 'status'>,
+  latestSample: TelemetrySample | null,
+  now: Date,
+): Link {
+  return { ...record, status: deriveStatus(record, latestSample, now) };
 }
