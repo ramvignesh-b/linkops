@@ -8,16 +8,23 @@ import type { Random } from './random';
 // Degradation Episodes are what pulls a Link's target down; this file only
 // walks around one fixed, healthy target.
 const RSSI_TARGET_DBM = -55;
-// The schema only caps rssiDbm at 0; this floor is not a schema requirement,
-// just a sanity backstop so the walk stays a plausible Sample even under
-// adversarial noise, instead of drifting to an arbitrarily large negative.
-const RSSI_FLOOR_DBM = -100;
+// This class of point-to-point link typically reports -30 to -90 dBm; the
+// floor here sits 5 dB below that, wide enough to cover a genuinely faulty
+// Link without letting the walk drift to an arbitrarily large negative
+// under adversarial noise. The schema only caps rssiDbm at 0 — this floor
+// is a Simulator-internal backstop, not a wire constraint.
+const RSSI_FLOOR_DBM = -95;
 
 const SNR_TARGET_DB = 25;
-// The schema leaves snrDb unbounded; same kind of sanity backstop as
-// RSSI_FLOOR_DBM, not a wire constraint.
-const SNR_FLOOR_DB = -10;
-const SNR_CEILING_DB = 45;
+// Typical SNR for this class of link runs 0 to 40 dB. The floor sits 5 dB
+// below that for the same reason RSSI_FLOOR_DBM does — a severely degraded
+// Link's SNR can plausibly dip below the noise floor. The ceiling matches
+// the typical range exactly: nothing about a healthy Link's walk
+// approaches it, so there is no case for headroom there either. The
+// schema leaves snrDb unbounded — same backstop-not-a-wire-constraint
+// relationship as the RSSI floor.
+const SNR_FLOOR_DB = -5;
+const SNR_CEILING_DB = 40;
 
 // The snrDb at which the walk considers a Link saturated at its own
 // capacity. Chosen so the target snrDb (25) already sits comfortably above
