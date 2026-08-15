@@ -103,6 +103,35 @@ describe('simulateNextSample', () => {
     expect(result.snrDb).toBeLessThanOrEqual(1_000);
   });
 
+  it('floors rssiDbm at -95, 5 dB below this link class’s typical -30..-90 range', () => {
+    const result = simulateNextSample(
+      link,
+      previousAt({ rssiDbm: -500 }),
+      now,
+      () => 0,
+    );
+
+    expect(result.rssiDbm).toBeGreaterThanOrEqual(-95);
+  });
+
+  it('bounds snrDb to -5..40, 5 dB below this link class’s typical 0..40 range at the floor and matching it exactly at the ceiling', () => {
+    const low = simulateNextSample(
+      link,
+      previousAt({ snrDb: -500 }),
+      now,
+      () => 0,
+    );
+    const high = simulateNextSample(
+      link,
+      previousAt({ snrDb: 500 }),
+      now,
+      () => 1,
+    );
+
+    expect(low.snrDb).toBeGreaterThanOrEqual(-5);
+    expect(high.snrDb).toBeLessThanOrEqual(40);
+  });
+
   it('derives throughputMbps from the walked snrDb, scaled by capacityMbps', () => {
     const smaller = simulateNextSample(
       { id: link.id, capacityMbps: 100 },
