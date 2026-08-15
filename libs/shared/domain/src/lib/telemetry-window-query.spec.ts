@@ -25,14 +25,21 @@ describe('telemetryWindowQuerySchema', () => {
     expect(parsed).toEqual({ windowMs: 60 * 60 * 1000 });
   });
 
-  it.each(['5', '5x', '-5m', 'm5', '', '5.5m'])(
-    'rejects an unparseable window of %s',
-    (window) => {
-      const result = telemetryWindowQuerySchema.safeParse({ window });
+  it.each([
+    '5',
+    '5x',
+    '-5m',
+    'm5',
+    '',
+    '5.5m',
+    '0s',
+    '0m',
+    '999999999999999999999999999999999999999999s',
+  ])('rejects an unparseable window of %s', (window) => {
+    const result = telemetryWindowQuerySchema.safeParse({ window });
 
-      expect(result.success).toBe(false);
-    },
-  );
+    expect(result.success).toBe(false);
+  });
 
   it('names window as the offending field on rejection', () => {
     const result = telemetryWindowQuerySchema.safeParse({ window: 'bogus' });
