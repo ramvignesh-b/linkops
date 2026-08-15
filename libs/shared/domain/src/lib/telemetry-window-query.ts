@@ -3,7 +3,10 @@ import { z } from 'zod';
 /** `GET /api/links/:id/telemetry`'s default window when none is given. */
 export const DEFAULT_TELEMETRY_WINDOW = '5m';
 
-const WINDOW_PATTERN = /^(\d+)(s|m|h)$/;
+// The amount is a positive integer — no leading zero, so "0" itself never
+// matches — capped at 9 digits so `Number(amount)` can never overflow to
+// `Infinity` once multiplied by a unit's millisecond factor.
+const WINDOW_PATTERN = /^([1-9]\d{0,8})(s|m|h)$/;
 
 const UNIT_MS: Record<string, number> = {
   s: 1_000,
