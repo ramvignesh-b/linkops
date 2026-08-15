@@ -29,6 +29,14 @@ export class Simulator implements OnModuleInit, OnApplicationShutdown {
    */
   private episodes = new Map<LinkId, DegradationEpisode>();
 
+  /**
+   * Ticks elapsed since boot, and the number the stream puts on the wire as
+   * `id:`. It lives here because this class owns the interval — deriving it
+   * anywhere downstream would be a second counter to keep in step with this
+   * one. Ticket 06's health instrument reports the same number.
+   */
+  private tickCount = 0;
+
   constructor(
     private readonly repository: LinkRepository,
     private readonly store: TelemetrySampleStore,
@@ -52,9 +60,10 @@ export class Simulator implements OnModuleInit, OnApplicationShutdown {
 
   private tick(): void {
     const now = this.clock.now();
+    this.tickCount++;
     const nextEpisodes = new Map<LinkId, DegradationEpisode>();
 
-    const batch: TelemetrySample[] = this.repository.findAll().map((link) => {
+    const samples: TelemetrySample[] = this.repository.findAll().map((link) => {
       const previous = this.store.latestSample(link.id);
       const episode = stepEpisode(
         this.episodes.get(link.id) ?? null,
@@ -81,8 +90,8 @@ export class Simulator implements OnModuleInit, OnApplicationShutdown {
     // read, so it never makes it into `nextEpisodes` — no separate prune.
     this.episodes = nextEpisodes;
 
-    // One batch every Tick, even an empty one — the Tick is the unit of
-    // change, not the presence of a Roster.
-    this.bus.next(batch);
+    // One publication every Tick, even one carrying no Samples — the Tick is
+    // the unit of change, not the presence of a Roster.
+    this.bus.next({ tick: this.tickCount, ts: now.toISOString(), samples });
   }
 }

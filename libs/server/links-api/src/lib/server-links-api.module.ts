@@ -1,53 +1,23 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_PIPE } from '@nestjs/core';
 import { ZodValidationPipe } from 'nestjs-zod';
-import {
-  LINK_REPOSITORY,
-  createSeededLinkRepository,
-  type LinkRepository,
-} from '@linkops/server/links-data-access';
-import {
-  SAMPLE_BUFFER_CAPACITY,
-  Simulator,
-  SimulatorTelemetryPort,
-  systemClock,
-  TELEMETRY_BUS,
-  TELEMETRY_PORT,
-  TELEMETRY_SAMPLE_STORE,
-  TelemetryBus,
-  TelemetrySampleStore,
-} from '@linkops/server/telemetry';
+import { ServerLinksDataAccessModule } from '@linkops/server/links-data-access';
+import { ServerTelemetryModule } from '@linkops/server/telemetry';
 import { FleetController } from './fleet.controller';
 import { LinksController } from './links.controller';
 import { LinkDomainErrorFilter } from './link-domain-error.filter';
 
+/**
+ * The HTTP surface for Links and the Fleet. It owns its controllers and the
+ * two application-scoped providers that shape every response — the error
+ * envelope filter and the validation pipe — and nothing else: the Roster and
+ * the telemetry providers belong to the libraries that own them, so a second
+ * feature can share the same instances rather than constructing its own.
+ */
 @Module({
+  imports: [ServerLinksDataAccessModule, ServerTelemetryModule],
   controllers: [LinksController, FleetController],
   providers: [
-    { provide: LINK_REPOSITORY, useFactory: createSeededLinkRepository },
-    {
-      provide: TELEMETRY_SAMPLE_STORE,
-      useFactory: () => new TelemetrySampleStore(SAMPLE_BUFFER_CAPACITY),
-    },
-    { provide: TELEMETRY_BUS, useFactory: () => new TelemetryBus() },
-    // Registered so Nest instantiates and lifecycle-manages it, even though
-    // nothing injects it by name — see Simulator.onModuleInit /
-    // onApplicationShutdown and apps/api's app.enableShutdownHooks().
-    {
-      provide: Simulator,
-      useFactory: (
-        repository: LinkRepository,
-        store: TelemetrySampleStore,
-        bus: TelemetryBus,
-      ) => new Simulator(repository, store, bus, systemClock, Math.random),
-      inject: [LINK_REPOSITORY, TELEMETRY_SAMPLE_STORE, TELEMETRY_BUS],
-    },
-    {
-      provide: TELEMETRY_PORT,
-      useFactory: (repository: LinkRepository, store: TelemetrySampleStore) =>
-        new SimulatorTelemetryPort(repository, store, systemClock),
-      inject: [LINK_REPOSITORY, TELEMETRY_SAMPLE_STORE],
-    },
     { provide: APP_FILTER, useClass: LinkDomainErrorFilter },
     { provide: APP_PIPE, useClass: ZodValidationPipe },
   ],
