@@ -2,9 +2,11 @@ import { toLinkId, type LinkId } from '@linkops/shared/domain';
 import type {
   CreateLinkResult,
   LinkDraft,
+  LinkDraftPatch,
   LinkFilter,
   LinkRecord,
   LinkRepository,
+  UpdateLinkResult,
 } from './link-repository';
 
 export class InMemoryLinkRepository implements LinkRepository {
@@ -40,6 +42,40 @@ export class InMemoryLinkRepository implements LinkRepository {
     return { ok: true, link: { ...record } };
   }
 
+  update(
+    id: LinkId,
+    patch: LinkDraftPatch,
+    expectedVersion: number,
+  ): UpdateLinkResult {
+    const stored = this.links.get(id);
+
+    if (stored === undefined) {
+      return { ok: false, reason: 'not-found' };
+    }
+
+    if (stored.version !== expectedVersion) {
+      return { ok: false, reason: 'version-conflict', current: { ...stored } };
+    }
+
+    // Scoped to *other* Links: a patch that resends the Link's own name is a
+    // no-op rename, not a collision, and rejecting it would make round-tripping
+    // a whole form impossible without diffing it first.
+    if (patch.name !== undefined && this.hasName(patch.name, id)) {
+      return { ok: false, reason: 'name-taken', name: patch.name };
+    }
+
+    const updated: LinkRecord = {
+      ...stored,
+      ...patch,
+      version: stored.version + 1,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.links.set(id, updated);
+
+    return { ok: true, link: { ...updated } };
+  }
+
   count(): number {
     return this.links.size;
   }
@@ -59,9 +95,10 @@ export class InMemoryLinkRepository implements LinkRepository {
       .map((link) => ({ ...link }));
   }
 
-  private hasName(name: string): boolean {
+  /** `exceptId` lets a rename ignore the Link doing the renaming. */
+  private hasName(name: string, exceptId?: LinkId): boolean {
     for (const link of this.links.values()) {
-      if (link.name === name) return true;
+      if (link.name === name && link.id !== exceptId) return true;
     }
 
     return false;

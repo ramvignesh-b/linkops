@@ -19,6 +19,18 @@ count()                               → number
 
 `create`'s result type was added in ticket `18`, once name uniqueness turned out to be an invariant the repository — not the controller — enforces. It wasn't foreseen when this ADR was first written, but it is the same shape for the same reason: a duplicate name is a result the repository knows about, not a throw across a layer that doesn't know it's serving HTTP.
 
+`update`'s failure arm gained a `reason` discriminator in ticket `19`, for the same reason again: an edit can also name an id that does not exist, or rename a Link onto a name another Link holds, and both are things the repository knows and HTTP does not.
+
+```
+update(id, patch, expectedVersion) →
+  | { ok: true, link }
+  | { ok: false, reason: 'not-found' }
+  | { ok: false, reason: 'name-taken', name }
+  | { ok: false, reason: 'version-conflict', current }
+```
+
+The conflict arm still carries the whole current record, which is the part this ADR exists for. The controller switches exhaustively on `reason`, so a fourth failure mode is a compile error at every call site rather than a silent mislabel.
+
 ## Why not `save(link)`
 
 `save` takes a whole Link and writes it. The version check then lives *somewhere else* — a service, a guard, a convention — and the next person to add a write path has to know it exists. Optimistic concurrency is the one invariant a caller cannot be trusted with, because the failure is silent: the second writer wins and the first operator's change disappears with no error anywhere.

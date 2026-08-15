@@ -5,6 +5,7 @@ import {
   HttpCode,
   Inject,
   Param,
+  Patch,
   Post,
 } from '@nestjs/common';
 import {
@@ -20,8 +21,10 @@ import {
 } from '@linkops/server/links-data-access';
 import { TELEMETRY_PORT, type TelemetryPort } from '@linkops/server/telemetry';
 import { LinkCreateDto } from './dto/link-create.dto';
+import { LinkPatchDto } from './dto/link-patch.dto';
 import { LinkNameTakenError } from './errors/link-name-taken.error';
 import { LinkNotFoundError } from './errors/link-not-found.error';
+import { LinkVersionConflictError } from './errors/link-version-conflict.error';
 
 @Controller('links')
 export class LinksController {
@@ -72,6 +75,35 @@ export class LinksController {
     switch (result.reason) {
       case 'name-taken':
         throw new LinkNameTakenError(dto.name);
+    }
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: LinkPatchDto): Link {
+    const { version, ...patch } = dto;
+    const result = this.repository.update(toLinkId(id), patch, version);
+
+    if (result.ok) {
+      return withStatus(
+        result.link,
+        this.telemetry.latestSample(result.link.id),
+        new Date(),
+      );
+    }
+
+    switch (result.reason) {
+      case 'not-found':
+        throw new LinkNotFoundError(id);
+      case 'name-taken':
+        throw new LinkNameTakenError(result.name);
+      case 'version-conflict':
+        throw new LinkVersionConflictError(
+          withStatus(
+            result.current,
+            this.telemetry.latestSample(result.current.id),
+            new Date(),
+          ),
+        );
     }
   }
 }
