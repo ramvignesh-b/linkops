@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   deriveStatus,
@@ -22,10 +23,12 @@ import {
 } from '@linkops/server/links-data-access';
 import { TELEMETRY_PORT, type TelemetryPort } from '@linkops/server/telemetry';
 import { LinkCreateDto } from './dto/link-create.dto';
+import { LinkListQueryDto } from './dto/link-list-query.dto';
 import { LinkPatchDto } from './dto/link-patch.dto';
 import { LinkNameTakenError } from './errors/link-name-taken.error';
 import { LinkNotFoundError } from './errors/link-not-found.error';
 import { LinkVersionConflictError } from './errors/link-version-conflict.error';
+import { sortLinks, type SortableLink } from './sort-links';
 
 @Controller('links')
 export class LinksController {
@@ -35,14 +38,24 @@ export class LinksController {
   ) {}
 
   @Get()
-  findAll(): Link[] {
+  findAll(@Query() query: LinkListQueryDto): Link[] {
     const now = new Date();
 
-    return this.repository
-      .findAll()
-      .map((record) =>
-        withStatus(record, this.telemetry.latestSample(record.id), now),
+    // band and q are filtered here, inside the repository — they are fields
+    // it owns. status is not: it is derived from Samples the repository has
+    // never seen, so filtering on it, like sorting on it or on
+    // throughputMbps, happens above the repository, once Telemetry has
+    // supplied the Sample each Link's status and throughput come from.
+    const entries = this.repository
+      .findAll({ band: query.band, q: query.q })
+      .map((record) => this.toSortableEntry(record, now))
+      .filter(
+        (entry) =>
+          query.status === undefined ||
+          entry.link.status.status === query.status,
       );
+
+    return sortLinks(entries, query.sort, query.dir).map((entry) => entry.link);
   }
 
   @Get(':id')
@@ -130,6 +143,16 @@ export class LinksController {
       this.telemetry.latestSample(record.id),
       new Date(),
     );
+  }
+
+  /** A record as `findAll`'s status filter and sort need it — see `SortableLink`. */
+  private toSortableEntry(record: LinkRecord, now: Date): SortableLink {
+    const latestSample = this.telemetry.latestSample(record.id);
+
+    return {
+      link: withStatus(record, latestSample, now),
+      throughputMbps: latestSample?.throughputMbps ?? 0,
+    };
   }
 }
 
