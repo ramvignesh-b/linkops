@@ -1,5 +1,5 @@
 import { toLinkId } from './ids';
-import { deriveStatus } from './derive-status';
+import { deriveStatus, withDerivedStatus } from './derive-status';
 import type { TelemetrySample } from './telemetry-sample';
 
 const link = { capacityMbps: 300 };
@@ -123,5 +123,37 @@ describe('deriveStatus', () => {
       status: 'down',
       reason: 'stale',
     });
+  });
+});
+
+describe('withDerivedStatus', () => {
+  const record = {
+    id: toLinkId('lnk_0001'),
+    name: 'North Ridge to Depot',
+    siteA: 'North Ridge',
+    siteB: 'Depot',
+    band: '5GHz',
+    mode: 'PtP',
+    capacityMbps: 300,
+    txPowerDbm: 20,
+    channelWidthMhz: 40,
+    version: 1,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+  } as const;
+
+  it('carries the stored record through untouched, with Status derived onto it', () => {
+    expect(withDerivedStatus(record, sampleAt(18, 180), now)).toEqual({
+      ...record,
+      status: { status: 'up' },
+    });
+  });
+
+  it('derives the same Status a caller would get from deriveStatus itself', () => {
+    const stale = sampleAt(18, 180, 6_000);
+
+    expect(withDerivedStatus(record, stale, now).status).toEqual(
+      deriveStatus(record, stale, now),
+    );
   });
 });

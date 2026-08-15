@@ -7,6 +7,7 @@ export * from './lib/link-list-query';
 export * from './lib/telemetry-sample';
 export * from './lib/telemetry-window-query';
 export * from './lib/fleet-summary';
+export * from './lib/stream-events';
 export * from './lib/derive-status';
 export * from './lib/field-issue';
 export * from './lib/zod-issues-to-field-issues';
