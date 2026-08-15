@@ -1,7 +1,8 @@
 import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import type { LinkRepository } from '@linkops/server/links-data-access';
-import type { TelemetrySample } from '@linkops/shared/domain';
+import type { LinkId, TelemetrySample } from '@linkops/shared/domain';
 import type { Clock } from './clock';
+import { type DegradationEpisode, stepEpisode } from './degradation-episode';
 import type { Random } from './random';
 import { simulateNextSample } from './simulate-next-sample';
 import { type TelemetryBus } from './telemetry-bus';
@@ -18,6 +19,15 @@ export const TICK_MS = 1_000;
  */
 export class Simulator implements OnModuleInit, OnApplicationShutdown {
   private handle: ReturnType<typeof setInterval> | undefined;
+
+  /**
+   * One Link's Degradation Episode state, present only while it is
+   * mid-episode. Replaced with a fresh Map every Tick, built only from the
+   * current Roster, so a Link deleted mid-episode leaves no entry behind —
+   * the same "no ghost state" property the Roster read already gives
+   * Sample production.
+   */
+  private episodes = new Map<LinkId, DegradationEpisode>();
 
   constructor(
     private readonly repository: LinkRepository,
@@ -42,14 +52,34 @@ export class Simulator implements OnModuleInit, OnApplicationShutdown {
 
   private tick(): void {
     const now = this.clock.now();
+    const nextEpisodes = new Map<LinkId, DegradationEpisode>();
 
     const batch: TelemetrySample[] = this.repository.findAll().map((link) => {
       const previous = this.store.latestSample(link.id);
-      const sample = simulateNextSample(link, previous, now, this.random);
+      const episode = stepEpisode(
+        this.episodes.get(link.id) ?? null,
+        this.random,
+      );
+
+      if (episode !== null) {
+        nextEpisodes.set(link.id, episode);
+      }
+
+      const sample = simulateNextSample(
+        link,
+        previous,
+        now,
+        this.random,
+        episode,
+      );
       this.store.push(sample);
 
       return sample;
     });
+
+    // A Link deleted mid-episode is simply absent from this Tick's Roster
+    // read, so it never makes it into `nextEpisodes` — no separate prune.
+    this.episodes = nextEpisodes;
 
     // One batch every Tick, even an empty one — the Tick is the unit of
     // change, not the presence of a Roster.

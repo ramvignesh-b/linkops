@@ -1,4 +1,5 @@
-import { toLinkId } from '@linkops/shared/domain';
+import { deriveStatus, toLinkId } from '@linkops/shared/domain';
+import type { LinkStatus } from '@linkops/shared/domain';
 import type {
   LinkRecord,
   LinkRepository,
@@ -29,6 +30,13 @@ function fakeRepository(
 
 /** Zero noise every draw, so a Tick's output is exactly the reversion math. */
 const fixedRandom: Random = () => 0.5;
+
+/** Pops scripted values in order, then falls back to a fixed draw — zero
+ * noise and no episode start — once the script runs out. */
+function scriptedRandom(scripted: number[], fallback: number): Random {
+  let i = 0;
+  return () => (i < scripted.length ? scripted[i++] : fallback);
+}
 
 describe('Simulator', () => {
   it('produces no Sample before the first Tick', () => {
@@ -263,6 +271,62 @@ describe('Simulator', () => {
       store.dropLink(target.id);
 
       expect(store.latestSample(target.id)).toBeNull();
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe('Degradation Episodes', () => {
+    it('starts an episode from a forced Random draw, visibly degrades the Link, then ends it and lets Status recover', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      const target = link();
+      const repository = fakeRepository([target]);
+      const store = new TelemetrySampleStore(300);
+      const bus = new TelemetryBus();
+      // Ticks 1-4 (indices 0-3): healthy, zero noise. Tick 2 (indices 4-5):
+      // the start-probability draw forces an episode, the duration draw
+      // picks its shortest length. Everything after falls back to zero
+      // noise and never rolls another start.
+      const random = scriptedRandom([0.5, 0.5, 0.5, 0.5, 0, 0], 0.5);
+      const simulator = new Simulator(
+        repository,
+        store,
+        bus,
+        systemClock,
+        random,
+      );
+      simulator.onModuleInit();
+
+      function statusAfterNextTick(): LinkStatus {
+        vi.advanceTimersByTime(1_000);
+        return deriveStatus(target, store.latestSample(target.id), new Date());
+      }
+
+      // Tick 1: healthy, before the episode starts.
+      expect(statusAfterNextTick()).toEqual({ status: 'up' });
+
+      // Ticks 2-9: the episode is active — the target is pulled down, and
+      // Status traceably changes to `degraded` partway through the walk.
+      const midEpisode: LinkStatus[] = [];
+      for (let tick = 2; tick <= 9; tick++) {
+        midEpisode.push(statusAfterNextTick());
+      }
+
+      expect(midEpisode).toContainEqual({ status: 'degraded' });
+      expect(midEpisode[midEpisode.length - 1]).toEqual({
+        status: 'degraded',
+      });
+
+      // Ticks 10+: the countdown reached zero, the target reverted, and the
+      // walk recovers back to `up`.
+      let recovered: LinkStatus | undefined;
+      for (let tick = 10; tick <= 14 && recovered === undefined; tick++) {
+        const status = statusAfterNextTick();
+        if (status.status === 'up') recovered = status;
+      }
+
+      expect(recovered).toEqual({ status: 'up' });
 
       vi.useRealTimers();
     });

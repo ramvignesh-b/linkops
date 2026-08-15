@@ -1,12 +1,15 @@
 import type { LinkId, TelemetrySample } from '@linkops/shared/domain';
+import type { DegradationEpisode } from './degradation-episode';
 import type { Random } from './random';
 
 // Mean-reversion targets. Chosen so a freshly-created Link's first Sample
 // reads comfortably `up` (`deriveStatus`'s thresholds are `snrDb >= 18` and
 // `throughputMbps >= 0.6 * capacityMbps`) — a fleet that has just started
-// ticking should look healthy, not born half-degraded. Ticket 25's
-// Degradation Episodes are what pulls a Link's target down; this file only
-// walks around one fixed, healthy target.
+// ticking should look healthy, not born half-degraded. That holds for
+// every Tick a Degradation Episode doesn't claim; the same fixed, low
+// per-Tick probability that starts one for an established Link can also
+// land on a Link's very first Tick, in which case it is born already
+// walking the degraded target below — an accepted rarity, not a bug.
 const RSSI_TARGET_DBM = -55;
 // This class of point-to-point link typically reports -30 to -90 dBm; the
 // floor here sits 5 dB below that, wide enough to cover a genuinely faulty
@@ -38,6 +41,16 @@ const SNR_NOISE_DB = 2;
 const THROUGHPUT_NOISE_RATIO = 0.05;
 
 const REVERSION_RATE = 0.3;
+
+// A Degradation Episode's mean-reversion target. `deriveStatus` needs
+// `snrDb < 10` for `down: metrics`; sitting the target at 12 — inside the
+// `degraded` band (10–18) but close to its floor — means the walk settles
+// as `degraded` and its own noise occasionally tips it into `down`, which
+// is what "degraded-or-down territory" means for one fixed target rather
+// than two. rssiDbm doesn't feed `deriveStatus`, but it degrades alongside
+// snrDb so a drill-down into the Link still reads as visibly bad.
+const DEGRADED_RSSI_TARGET_DBM = -80;
+const DEGRADED_SNR_TARGET_DB = 12;
 
 /** `random()` is `[0, 1)`; this maps it to noise symmetric around zero. */
 function noise(amplitude: number, random: Random): number {
@@ -72,20 +85,27 @@ export interface SimulatedLink {
 
 /**
  * Produces one Link's next Telemetry Sample from its previous one — a pure
- * function of `previous`, `now` and `random`, so the Simulator's Tick loop
- * stays a thin orchestrator and every walk behaviour is testable without a
- * timer. `previous` is `null` for a Link's first-ever Sample.
+ * function of `previous`, `now`, `random` and the Link's Degradation
+ * Episode state, so the Simulator's Tick loop stays a thin orchestrator and
+ * every walk behaviour is testable without a timer. `previous` is `null`
+ * for a Link's first-ever Sample; `episode` is `null` while the Link is
+ * healthy, pulling the walk's target down while it isn't.
  */
 export function simulateNextSample(
   link: SimulatedLink,
   previous: TelemetrySample | null,
   now: Date,
   random: Random,
+  episode: DegradationEpisode | null = null,
 ): TelemetrySample {
+  const rssiTargetDbm =
+    episode === null ? RSSI_TARGET_DBM : DEGRADED_RSSI_TARGET_DBM;
+  const snrTargetDb = episode === null ? SNR_TARGET_DB : DEGRADED_SNR_TARGET_DB;
+
   const rssiDbm = clamp(
     step(
-      previous?.rssiDbm ?? RSSI_TARGET_DBM,
-      RSSI_TARGET_DBM,
+      previous?.rssiDbm ?? rssiTargetDbm,
+      rssiTargetDbm,
       RSSI_NOISE_DB,
       random,
     ),
@@ -94,7 +114,7 @@ export function simulateNextSample(
   );
 
   const snrDb = clamp(
-    step(previous?.snrDb ?? SNR_TARGET_DB, SNR_TARGET_DB, SNR_NOISE_DB, random),
+    step(previous?.snrDb ?? snrTargetDb, snrTargetDb, SNR_NOISE_DB, random),
     SNR_FLOOR_DB,
     SNR_CEILING_DB,
   );

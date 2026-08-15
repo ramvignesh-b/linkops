@@ -183,6 +183,16 @@ describe('simulateNextSample', () => {
     expect(noisy.throughputMbps).not.toBe(quiet.throughputMbps);
   });
 
+  it("pulls the walk's target into degraded territory while a Degradation Episode is active", () => {
+    const healthy = simulateNextSample(link, null, now, midpoint);
+    const degraded = simulateNextSample(link, null, now, midpoint, {
+      remainingTicks: 5,
+    });
+
+    expect(degraded.snrDb).toBeLessThan(healthy.snrDb);
+    expect(degraded.rssiDbm).toBeLessThan(healthy.rssiDbm);
+  });
+
   it('clamps throughputMbps within [0, capacityMbps]', () => {
     const saturated = simulateNextSample(
       link,
