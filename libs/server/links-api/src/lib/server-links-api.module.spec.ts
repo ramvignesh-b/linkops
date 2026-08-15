@@ -3,7 +3,13 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { ServerLinksApiModule } from './server-links-api.module';
 
-describe('GET /links', () => {
+/**
+ * Boots the real module — real repository, real validation pipe, real
+ * exception filter — fresh for every test, so no test inherits another's
+ * fleet. Returns a getter rather than the server itself, because the instance
+ * does not exist until `beforeEach` has run.
+ */
+function useServer(): () => ReturnType<INestApplication['getHttpServer']> {
   let app: INestApplication;
 
   beforeEach(async () => {
@@ -16,11 +22,20 @@ describe('GET /links', () => {
   });
 
   afterEach(async () => {
+    // Harmless where no test faked the clock, and the only thing standing
+    // between a frozen `Date` and every later test in the file.
+    vi.useRealTimers();
     await app.close();
   });
 
+  return () => app.getHttpServer();
+}
+
+describe('GET /links', () => {
+  const server = useServer();
+
   it('returns the ten seeded Links, each down for want of data', async () => {
-    const response = await request(app.getHttpServer()).get('/links');
+    const response = await request(server()).get('/links');
 
     expect(response.status).toBe(200);
     expect(response.body).toHaveLength(10);
@@ -36,23 +51,10 @@ describe('GET /links', () => {
 });
 
 describe('GET /links/:id', () => {
-  let app: INestApplication;
-
-  beforeEach(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [ServerLinksApiModule],
-    }).compile();
-
-    app = moduleRef.createNestApplication();
-    await app.init();
-  });
-
-  afterEach(async () => {
-    await app.close();
-  });
+  const server = useServer();
 
   it('returns a seeded Link with its most recent reading, null until the Simulator lands', async () => {
-    const response = await request(app.getHttpServer()).get('/links/lnk_0001');
+    const response = await request(server()).get('/links/lnk_0001');
 
     expect(response.status).toBe(200);
     expect(response.body.latestSample).toBeNull();
@@ -64,7 +66,7 @@ describe('GET /links/:id', () => {
   });
 
   it('answers an unknown id with the project error envelope, not a framework default', async () => {
-    const response = await request(app.getHttpServer()).get('/links/lnk_9999');
+    const response = await request(server()).get('/links/lnk_9999');
 
     expect(response.status).toBe(404);
     expect(response.body).toEqual({
@@ -89,23 +91,10 @@ const validCreateBody = {
 };
 
 describe('POST /links', () => {
-  let app: INestApplication;
-
-  beforeEach(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [ServerLinksApiModule],
-    }).compile();
-
-    app = moduleRef.createNestApplication();
-    await app.init();
-  });
-
-  afterEach(async () => {
-    await app.close();
-  });
+  const server = useServer();
 
   it('creates a Link at version 1 with createdAt and updatedAt set', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await request(server())
       .post('/links')
       .send(validCreateBody);
 
@@ -119,9 +108,9 @@ describe('POST /links', () => {
   });
 
   it('appears in a subsequent GET /links', async () => {
-    await request(app.getHttpServer()).post('/links').send(validCreateBody);
+    await request(server()).post('/links').send(validCreateBody);
 
-    const response = await request(app.getHttpServer()).get('/links');
+    const response = await request(server()).get('/links');
 
     expect(
       response.body.some(
@@ -131,7 +120,7 @@ describe('POST /links', () => {
   });
 
   it('rejects an out-of-range capacityMbps with the offending field named', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await request(server())
       .post('/links')
       .send({ ...validCreateBody, capacityMbps: 5 });
 
@@ -145,7 +134,7 @@ describe('POST /links', () => {
   });
 
   it('does not honour a status or version set on the request body', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await request(server())
       .post('/links')
       .send({
         ...validCreateBody,
@@ -159,9 +148,9 @@ describe('POST /links', () => {
   });
 
   it('refuses a duplicate name with the offending name in details', async () => {
-    await request(app.getHttpServer()).post('/links').send(validCreateBody);
+    await request(server()).post('/links').send(validCreateBody);
 
-    const response = await request(app.getHttpServer())
+    const response = await request(server())
       .post('/links')
       .send(validCreateBody);
 
@@ -177,24 +166,10 @@ describe('POST /links', () => {
 });
 
 describe('PATCH /links/:id', () => {
-  let app: INestApplication;
-
-  beforeEach(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [ServerLinksApiModule],
-    }).compile();
-
-    app = moduleRef.createNestApplication();
-    await app.init();
-  });
-
-  afterEach(async () => {
-    vi.useRealTimers();
-    await app.close();
-  });
+  const server = useServer();
 
   it('applies an edit carrying the matching version and returns the Link at the next one', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await request(server())
       .patch('/links/lnk_0001')
       .send({ version: 1, txPowerDbm: 25 });
 
@@ -207,11 +182,11 @@ describe('PATCH /links/:id', () => {
   });
 
   it('answers a stale version with the whole current Link, so a conflict can be shown field by field', async () => {
-    await request(app.getHttpServer())
+    await request(server())
       .patch('/links/lnk_0001')
       .send({ version: 1, txPowerDbm: 25 });
 
-    const response = await request(app.getHttpServer())
+    const response = await request(server())
       .patch('/links/lnk_0001')
       .send({ version: 1, txPowerDbm: 30 });
 
@@ -228,7 +203,7 @@ describe('PATCH /links/:id', () => {
   });
 
   it('rejects a body with no version through the schema, naming version as the offending field', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await request(server())
       .patch('/links/lnk_0001')
       .send({ txPowerDbm: 25 });
 
@@ -240,7 +215,7 @@ describe('PATCH /links/:id', () => {
   });
 
   it('refuses a rename onto a name another Link already holds', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await request(server())
       .patch('/links/lnk_0001')
       .send({ version: 1, name: 'Depot to Warehouse' });
 
@@ -255,7 +230,7 @@ describe('PATCH /links/:id', () => {
   });
 
   it('answers an unknown id with the project error envelope', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await request(server())
       .patch('/links/lnk_9999')
       .send({ version: 1, txPowerDbm: 25 });
 
@@ -274,12 +249,12 @@ describe('PATCH /links/:id', () => {
   // only way to assert `updatedAt` *moved* — two writes landing in the same
   // millisecond produce the same ISO string, which would make this flaky.
   it('moves updatedAt and leaves createdAt where it was', async () => {
-    const before = await request(app.getHttpServer()).get('/links/lnk_0001');
+    const before = await request(server()).get('/links/lnk_0001');
     const { createdAt, updatedAt } = before.body.link;
 
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(new Date(updatedAt).getTime() + 60_000));
-    const response = await request(app.getHttpServer())
+    const response = await request(server())
       .patch('/links/lnk_0001')
       .send({ version: 1, txPowerDbm: 25 });
 
@@ -295,45 +270,32 @@ describe('PATCH /links/:id', () => {
  * the coupling no isolated test can see.
  */
 describe('a Link through its lifecycle', () => {
-  let app: INestApplication;
-
-  beforeEach(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [ServerLinksApiModule],
-    }).compile();
-
-    app = moduleRef.createNestApplication();
-    await app.init();
-  });
-
-  afterEach(async () => {
-    await app.close();
-  });
+  const server = useServer();
 
   it('is seeded, created, read, edited, and refuses the second edit at the version the first consumed', async () => {
-    const server = app.getHttpServer();
-
-    const seeded = await request(server).get('/links');
+    const seeded = await request(server()).get('/links');
     expect(seeded.status).toBe(200);
     expect(seeded.body).toHaveLength(10);
 
-    const created = await request(server).post('/links').send(validCreateBody);
+    const created = await request(server())
+      .post('/links')
+      .send(validCreateBody);
     expect(created.status).toBe(201);
     expect(created.body.version).toBe(1);
     const id: string = created.body.id;
 
-    const read = await request(server).get(`/links/${id}`);
+    const read = await request(server()).get(`/links/${id}`);
     expect(read.status).toBe(200);
     expect(read.body.latestSample).toBeNull();
     expect(read.body.link).toMatchObject({ id, version: 1 });
 
-    const edited = await request(server)
+    const edited = await request(server())
       .patch(`/links/${id}`)
       .send({ version: 1, capacityMbps: 500 });
     expect(edited.status).toBe(200);
     expect(edited.body).toMatchObject({ id, capacityMbps: 500, version: 2 });
 
-    const stale = await request(server)
+    const stale = await request(server())
       .patch(`/links/${id}`)
       .send({ version: 1, capacityMbps: 600 });
     expect(stale.status).toBe(409);

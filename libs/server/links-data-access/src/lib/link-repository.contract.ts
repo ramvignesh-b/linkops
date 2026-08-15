@@ -141,11 +141,10 @@ function updateVersionContract(createRepository: () => LinkRepository) {
       );
       if (!first.ok) throw new Error('expected the first update to succeed');
 
-      const second = repository.update(
-        link.id,
-        { txPowerDbm: 30 },
-        link.version,
-      );
+      let second: UpdateLinkResult | undefined;
+      expect(() => {
+        second = repository.update(link.id, { txPowerDbm: 30 }, link.version);
+      }).not.toThrow();
 
       expect(second).toEqual({
         ok: false,
