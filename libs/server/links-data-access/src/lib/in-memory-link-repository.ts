@@ -59,6 +59,9 @@ export class InMemoryLinkRepository implements LinkRepository {
       .map((link) => ({ ...link }));
   }
 
+  // Exact match, deliberately: unlike findAll's `q`, uniqueness is never
+  // documented as case- or whitespace-insensitive, so folding either in here
+  // would be enforcing a rule this ticket was never asked to define.
   private hasName(name: string): boolean {
     for (const link of this.links.values()) {
       if (link.name === name) return true;
