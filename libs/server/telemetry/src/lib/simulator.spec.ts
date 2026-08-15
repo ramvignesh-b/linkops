@@ -7,7 +7,7 @@ import type {
 import { link } from './link-record.fixture';
 import { Simulator } from './simulator';
 import { TelemetrySampleStore } from './telemetry-sample-store';
-import { TelemetryBus } from './telemetry-bus';
+import { TelemetryBus, type TelemetryTick } from './telemetry-bus';
 import { systemClock } from './clock';
 import type { Random } from './random';
 
@@ -103,7 +103,7 @@ describe('Simulator', () => {
     vi.useRealTimers();
   });
 
-  it('emits exactly one Bus batch per Tick, containing every Sample that Tick produced', () => {
+  it('publishes exactly one Tick to the Bus, carrying every Sample that Tick produced', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
     const repository = fakeRepository([
@@ -112,8 +112,8 @@ describe('Simulator', () => {
     ]);
     const store = new TelemetrySampleStore(300);
     const bus = new TelemetryBus();
-    const batches: unknown[][] = [];
-    bus.asObservable().subscribe((batch) => batches.push([...batch]));
+    const ticks: TelemetryTick[] = [];
+    bus.asObservable().subscribe((published) => ticks.push(published));
     const simulator = new Simulator(
       repository,
       store,
@@ -125,21 +125,53 @@ describe('Simulator', () => {
 
     vi.advanceTimersByTime(1_000);
 
-    expect(batches).toHaveLength(1);
-    expect(
-      (batches[0] as { linkId: string }[]).map((sample) => sample.linkId),
-    ).toEqual(['lnk_0001', 'lnk_0002']);
+    expect(ticks).toHaveLength(1);
+    expect(ticks[0].samples.map((sample) => sample.linkId)).toEqual([
+      'lnk_0001',
+      'lnk_0002',
+    ]);
 
     vi.useRealTimers();
   });
 
-  it('still emits a (empty) batch on a Tick where the Roster is empty', () => {
+  it('numbers the Ticks from one and carries the time each Tick ran at', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const repository = fakeRepository([link()]);
+    const store = new TelemetrySampleStore(300);
+    const bus = new TelemetryBus();
+    const ticks: TelemetryTick[] = [];
+    bus.asObservable().subscribe((published) => ticks.push(published));
+    const simulator = new Simulator(
+      repository,
+      store,
+      bus,
+      systemClock,
+      fixedRandom,
+    );
+    simulator.onModuleInit();
+
+    vi.advanceTimersByTime(3_000);
+
+    // The Tick number is what the stream puts on the wire as `id:`, so it
+    // starts at 1 rather than 0 — there is no zeroth Tick to name.
+    expect(ticks.map((published) => published.tick)).toEqual([1, 2, 3]);
+    expect(ticks.map((published) => published.ts)).toEqual([
+      '2026-01-01T00:00:01.000Z',
+      '2026-01-01T00:00:02.000Z',
+      '2026-01-01T00:00:03.000Z',
+    ]);
+
+    vi.useRealTimers();
+  });
+
+  it('still publishes a Tick carrying no Samples when the Roster is empty', () => {
     vi.useFakeTimers();
     const repository = fakeRepository([]);
     const store = new TelemetrySampleStore(300);
     const bus = new TelemetryBus();
-    const batches: unknown[][] = [];
-    bus.asObservable().subscribe((batch) => batches.push([...batch]));
+    const ticks: TelemetryTick[] = [];
+    bus.asObservable().subscribe((published) => ticks.push(published));
     const simulator = new Simulator(
       repository,
       store,
@@ -151,7 +183,8 @@ describe('Simulator', () => {
 
     vi.advanceTimersByTime(1_000);
 
-    expect(batches).toEqual([[]]);
+    expect(ticks).toHaveLength(1);
+    expect(ticks[0].samples).toEqual([]);
 
     vi.useRealTimers();
   });
@@ -224,8 +257,8 @@ describe('Simulator', () => {
       const repository = fakeRepository([target]);
       const store = new TelemetrySampleStore(300);
       const bus = new TelemetryBus();
-      const batches: unknown[][] = [];
-      bus.asObservable().subscribe((batch) => batches.push([...batch]));
+      const ticks: TelemetryTick[] = [];
+      bus.asObservable().subscribe((published) => ticks.push(published));
       const simulator = new Simulator(
         repository,
         store,
@@ -244,7 +277,7 @@ describe('Simulator', () => {
       vi.advanceTimersByTime(1_000);
 
       expect(store.latestSample(target.id)).toBeNull();
-      expect(batches[1]).toEqual([]);
+      expect(ticks[1].samples).toEqual([]);
 
       vi.useRealTimers();
     });

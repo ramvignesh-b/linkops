@@ -9,3 +9,4 @@ export * from './lib/telemetry-sample-store';
 export * from './lib/telemetry-sample-store.token';
 export * from './lib/simulator';
 export * from './lib/simulator-telemetry-port';
+export * from './lib/server-telemetry.module';

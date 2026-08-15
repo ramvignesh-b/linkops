@@ -1,6 +1,6 @@
 import { toLinkId } from '@linkops/shared/domain';
 import type { TelemetrySample } from '@linkops/shared/domain';
-import { TelemetryBus } from './telemetry-bus';
+import { TelemetryBus, type TelemetryTick } from './telemetry-bus';
 
 const sample: TelemetrySample = {
   linkId: toLinkId('lnk_0001'),
@@ -10,26 +10,35 @@ const sample: TelemetrySample = {
   throughputMbps: 100,
 };
 
+function tick(overrides: Partial<TelemetryTick> = {}): TelemetryTick {
+  return {
+    tick: 1,
+    ts: '2026-01-01T00:00:00.000Z',
+    samples: [sample],
+    ...overrides,
+  };
+}
+
 describe('TelemetryBus', () => {
-  it('delivers exactly the batch passed to next() to a subscriber', () => {
+  it('delivers exactly the Tick passed to next() to a subscriber', () => {
     const bus = new TelemetryBus();
-    const received: (readonly TelemetrySample[])[] = [];
-    bus.asObservable().subscribe((batch) => received.push(batch));
+    const received: TelemetryTick[] = [];
+    bus.asObservable().subscribe((published) => received.push(published));
 
-    bus.next([sample]);
+    bus.next(tick());
 
-    expect(received).toEqual([[sample]]);
+    expect(received).toEqual([tick()]);
   });
 
   it('delivers one notification per next(), in order', () => {
     const bus = new TelemetryBus();
-    const received: (readonly TelemetrySample[])[] = [];
-    bus.asObservable().subscribe((batch) => received.push(batch));
+    const received: TelemetryTick[] = [];
+    bus.asObservable().subscribe((published) => received.push(published));
 
-    bus.next([sample]);
-    bus.next([]);
+    bus.next(tick());
+    bus.next(tick({ tick: 2, samples: [] }));
 
-    expect(received).toEqual([[sample], []]);
+    expect(received.map((published) => published.tick)).toEqual([1, 2]);
   });
 
   it('completes the observable on complete(), notifying subscribers', () => {
@@ -44,11 +53,11 @@ describe('TelemetryBus', () => {
 
   it('emits nothing after complete()', () => {
     const bus = new TelemetryBus();
-    const received: (readonly TelemetrySample[])[] = [];
-    bus.asObservable().subscribe((batch) => received.push(batch));
+    const received: TelemetryTick[] = [];
+    bus.asObservable().subscribe((published) => received.push(published));
 
     bus.complete();
-    bus.next([sample]);
+    bus.next(tick());
 
     expect(received).toEqual([]);
   });
