@@ -1,0 +1,287 @@
+import { toLinkId } from '@linkops/shared/domain';
+import type {
+  LinkRecord,
+  LinkRepository,
+} from '@linkops/server/links-data-access';
+import { Simulator } from './simulator';
+import { TelemetrySampleStore } from './telemetry-sample-store';
+import { TelemetryBus } from './telemetry-bus';
+import { systemClock } from './clock';
+import type { Random } from './random';
+
+function link(overrides: Partial<LinkRecord> = {}): LinkRecord {
+  return {
+    id: toLinkId('lnk_0001'),
+    name: 'North Ridge to Depot',
+    siteA: 'North Ridge',
+    siteB: 'Depot',
+    band: '5GHz',
+    mode: 'PtP',
+    capacityMbps: 300,
+    txPowerDbm: 20,
+    channelWidthMhz: 40,
+    version: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** A Roster the test can mutate mid-run, exactly like a real fleet changing. */
+function fakeRepository(
+  links: LinkRecord[],
+): LinkRepository & { links: LinkRecord[] } {
+  const repository = {
+    links,
+    findById: vi.fn(),
+    findAll: vi.fn((): LinkRecord[] => repository.links),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    count: vi.fn((): number => repository.links.length),
+  };
+
+  return repository;
+}
+
+/** Zero noise every draw, so a Tick's output is exactly the reversion math. */
+const fixedRandom: Random = () => 0.5;
+
+describe('Simulator', () => {
+  it('produces no Sample before the first Tick', () => {
+    const repository = fakeRepository([link()]);
+    const store = new TelemetrySampleStore(300);
+    const bus = new TelemetryBus();
+    new Simulator(repository, store, bus, systemClock, fixedRandom);
+
+    expect(store.latestSample(link().id)).toBeNull();
+  });
+
+  it('ticks at 1 Hz on one setInterval, writing a Sample per Roster Link each Tick', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const target = link();
+    const repository = fakeRepository([target]);
+    const store = new TelemetrySampleStore(300);
+    const bus = new TelemetryBus();
+    const simulator = new Simulator(
+      repository,
+      store,
+      bus,
+      systemClock,
+      fixedRandom,
+    );
+    simulator.onModuleInit();
+
+    vi.advanceTimersByTime(1_000);
+
+    expect(store.latestSample(target.id)?.ts).toBe('2026-01-01T00:00:01.000Z');
+
+    vi.advanceTimersByTime(1_000);
+
+    expect(store.latestSample(target.id)?.ts).toBe('2026-01-01T00:00:02.000Z');
+
+    vi.useRealTimers();
+  });
+
+  it('reads the Roster fresh each Tick, so a Link created mid-run gets its first Sample on the next Tick', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const repository = fakeRepository([link({ id: toLinkId('lnk_0001') })]);
+    const store = new TelemetrySampleStore(300);
+    const bus = new TelemetryBus();
+    const simulator = new Simulator(
+      repository,
+      store,
+      bus,
+      systemClock,
+      fixedRandom,
+    );
+    simulator.onModuleInit();
+
+    vi.advanceTimersByTime(1_000);
+    expect(store.latestSample(toLinkId('lnk_0002'))).toBeNull();
+
+    repository.links.push(
+      link({ id: toLinkId('lnk_0002'), name: 'Second Link' }),
+    );
+    vi.advanceTimersByTime(1_000);
+
+    expect(store.latestSample(toLinkId('lnk_0002'))).not.toBeNull();
+
+    vi.useRealTimers();
+  });
+
+  it('emits exactly one Bus batch per Tick, containing every Sample that Tick produced', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const repository = fakeRepository([
+      link({ id: toLinkId('lnk_0001') }),
+      link({ id: toLinkId('lnk_0002'), name: 'Second Link' }),
+    ]);
+    const store = new TelemetrySampleStore(300);
+    const bus = new TelemetryBus();
+    const batches: unknown[][] = [];
+    bus.asObservable().subscribe((batch) => batches.push([...batch]));
+    const simulator = new Simulator(
+      repository,
+      store,
+      bus,
+      systemClock,
+      fixedRandom,
+    );
+    simulator.onModuleInit();
+
+    vi.advanceTimersByTime(1_000);
+
+    expect(batches).toHaveLength(1);
+    expect(
+      (batches[0] as { linkId: string }[]).map((sample) => sample.linkId),
+    ).toEqual(['lnk_0001', 'lnk_0002']);
+
+    vi.useRealTimers();
+  });
+
+  it('still emits a (empty) batch on a Tick where the Roster is empty', () => {
+    vi.useFakeTimers();
+    const repository = fakeRepository([]);
+    const store = new TelemetrySampleStore(300);
+    const bus = new TelemetryBus();
+    const batches: unknown[][] = [];
+    bus.asObservable().subscribe((batch) => batches.push([...batch]));
+    const simulator = new Simulator(
+      repository,
+      store,
+      bus,
+      systemClock,
+      fixedRandom,
+    );
+    simulator.onModuleInit();
+
+    vi.advanceTimersByTime(1_000);
+
+    expect(batches).toEqual([[]]);
+
+    vi.useRealTimers();
+  });
+
+  describe('onApplicationShutdown', () => {
+    it('clears the interval so no further Ticks fire', () => {
+      vi.useFakeTimers();
+      const target = link();
+      const repository = fakeRepository([target]);
+      const store = new TelemetrySampleStore(300);
+      const bus = new TelemetryBus();
+      const simulator = new Simulator(
+        repository,
+        store,
+        bus,
+        systemClock,
+        fixedRandom,
+      );
+      simulator.onModuleInit();
+      vi.advanceTimersByTime(1_000);
+      const afterOneTick = store.latestSample(target.id);
+
+      simulator.onApplicationShutdown();
+      vi.advanceTimersByTime(5_000);
+
+      expect(store.latestSample(target.id)).toEqual(afterOneTick);
+      vi.useRealTimers();
+    });
+
+    it('completes the TelemetryBus', () => {
+      const repository = fakeRepository([]);
+      const store = new TelemetrySampleStore(300);
+      const bus = new TelemetryBus();
+      let completed = false;
+      bus.asObservable().subscribe({ complete: () => (completed = true) });
+      const simulator = new Simulator(
+        repository,
+        store,
+        bus,
+        systemClock,
+        fixedRandom,
+      );
+
+      simulator.onApplicationShutdown();
+
+      expect(completed).toBe(true);
+    });
+
+    it('is safe to call before the interval ever started', () => {
+      const repository = fakeRepository([]);
+      const store = new TelemetrySampleStore(300);
+      const bus = new TelemetryBus();
+      const simulator = new Simulator(
+        repository,
+        store,
+        bus,
+        systemClock,
+        fixedRandom,
+      );
+
+      expect(() => simulator.onApplicationShutdown()).not.toThrow();
+    });
+  });
+
+  describe('deletion racing a Tick', () => {
+    it('leaves no buffer and no emission when the repository delete and dropLink both land before the next Tick', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      const target = link();
+      const repository = fakeRepository([target]);
+      const store = new TelemetrySampleStore(300);
+      const bus = new TelemetryBus();
+      const batches: unknown[][] = [];
+      bus.asObservable().subscribe((batch) => batches.push([...batch]));
+      const simulator = new Simulator(
+        repository,
+        store,
+        bus,
+        systemClock,
+        fixedRandom,
+      );
+      simulator.onModuleInit();
+      vi.advanceTimersByTime(1_000);
+
+      // The delete path, in its load-bearing order: repository first, then
+      // dropLink — see LinksController.remove.
+      repository.links.length = 0;
+      store.dropLink(target.id);
+
+      vi.advanceTimersByTime(1_000);
+
+      expect(store.latestSample(target.id)).toBeNull();
+      expect(batches[1]).toEqual([]);
+
+      vi.useRealTimers();
+    });
+
+    it('leaves no buffer when a Tick writes a Sample and dropLink evicts it a moment later', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      const target = link();
+      const repository = fakeRepository([target]);
+      const store = new TelemetrySampleStore(300);
+      const bus = new TelemetryBus();
+      const simulator = new Simulator(
+        repository,
+        store,
+        bus,
+        systemClock,
+        fixedRandom,
+      );
+      simulator.onModuleInit();
+
+      vi.advanceTimersByTime(1_000);
+      expect(store.latestSample(target.id)).not.toBeNull();
+
+      store.dropLink(target.id);
+
+      expect(store.latestSample(target.id)).toBeNull();
+
+      vi.useRealTimers();
+    });
+  });
+});

@@ -1,6 +1,11 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { toLinkId } from '@linkops/shared/domain';
+import {
+  TELEMETRY_BUS,
+  TELEMETRY_SAMPLE_STORE,
+} from '@linkops/server/telemetry';
 import { ServerLinksApiModule } from './server-links-api.module';
 
 /**
@@ -25,7 +30,41 @@ function useServer(): () => ReturnType<INestApplication['getHttpServer']> {
     // Harmless where no test faked the clock, and the only thing standing
     // between a frozen `Date` and every later test in the file.
     vi.useRealTimers();
+    // Stops Simulator.onModuleInit's setInterval — close() runs the
+    // onApplicationShutdown hook chain on its own, whether or not
+    // enableShutdownHooks() was ever called; that call only matters for
+    // wiring a real OS signal to close(), which no test needs.
     await app.close();
+  });
+
+  return () => app.getHttpServer();
+}
+
+/**
+ * Like `useServer`, but with `Date`/`setInterval`/`clearInterval` faked
+ * *before* `app.init()` runs — so the Simulator's `setInterval` call is
+ * captured by the fake clock and `vi.advanceTimersByTimeAsync` can drive
+ * real Ticks with no sleeps. `setTimeout` stays real, which is what keeps
+ * supertest's own request/response cycle working underneath the fake clock.
+ */
+function useTickingServer(): () => ReturnType<
+  INestApplication['getHttpServer']
+> {
+  let app: INestApplication;
+
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    const moduleRef = await Test.createTestingModule({
+      imports: [ServerLinksApiModule],
+    }).compile();
+
+    app = moduleRef.createNestApplication();
+    await app.init();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    vi.useRealTimers();
   });
 
   return () => app.getHttpServer();
@@ -570,5 +609,107 @@ describe('a Link through its lifecycle', () => {
         details: { currentVersion: 2, current: edited.body },
       },
     });
+  });
+});
+
+describe('the Simulator writes live Telemetry across real Ticks', () => {
+  const server = useTickingServer();
+
+  it('gives GET /links/:id a fresh Sample after a Tick, no longer down: stale', async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const response = await request(server()).get('/links/lnk_0001');
+
+    expect(response.status).toBe(200);
+    expect(response.body.latestSample).not.toBeNull();
+    expect(response.body.link.status).not.toEqual({
+      status: 'down',
+      reason: 'stale',
+    });
+  });
+
+  it('gives GET /links and GET /links/:id/telemetry live data after a Tick', async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const list = await request(server()).get('/links');
+    const history = await request(server()).get(
+      '/links/lnk_0001/telemetry?window=5m',
+    );
+
+    expect(
+      (list.body as { id: string; status: unknown }[]).find(
+        (link) => link.id === 'lnk_0001',
+      )?.status,
+    ).not.toEqual({ status: 'down', reason: 'stale' });
+    expect(history.body).toHaveLength(1);
+  });
+
+  it('gives GET /fleet/summary live data across several Ticks', async () => {
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    const response = await request(server()).get('/fleet/summary');
+
+    expect(response.body.total).toBe(10);
+    expect(response.body.down).toBeLessThan(10);
+    expect(response.body.worstLinkId).not.toBeNull();
+
+    const history = await request(server()).get(
+      '/links/lnk_0001/telemetry?window=5m',
+    );
+    expect(history.body).toHaveLength(3);
+  });
+
+  it('produces no orphaned Sample for a deleted Link on a subsequent Tick', async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await request(server()).delete('/links/lnk_0001');
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const summary = await request(server()).get('/fleet/summary');
+    expect(summary.body.total).toBe(9);
+
+    const read = await request(server()).get('/links/lnk_0001');
+    expect(read.status).toBe(404);
+  });
+});
+
+describe('shutdown stops both leak sources', () => {
+  it('stops producing Samples and completes the TelemetryBus once app.close() has run', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    const moduleRef = await Test.createTestingModule({
+      imports: [ServerLinksApiModule],
+    }).compile();
+    const app = moduleRef.createNestApplication();
+    // Mirrors apps/api/main.ts's own wiring — not load-bearing for this
+    // test's assertions, since close() runs onApplicationShutdown either way.
+    app.enableShutdownHooks();
+    await app.init();
+    let busCompleted = false;
+    moduleRef
+      .get(TELEMETRY_BUS)
+      .asObservable()
+      .subscribe({ complete: () => (busCompleted = true) });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    const beforeShutdown = await request(app.getHttpServer()).get(
+      '/links/lnk_0001/telemetry?window=5m',
+    );
+
+    await app.close();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(busCompleted).toBe(true);
+    // The app is closed, so a further HTTP assertion isn't available; the
+    // TelemetrySampleStore itself is what proves no further Sample landed.
+    const store = moduleRef.get(TELEMETRY_SAMPLE_STORE);
+    expect(
+      store.history(
+        toLinkId('lnk_0001'),
+        Infinity,
+        new Date(8_640_000_000_000_000),
+      ),
+    ).toHaveLength(beforeShutdown.body.length);
+
+    vi.useRealTimers();
   });
 });

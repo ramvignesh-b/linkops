@@ -12,6 +12,14 @@ import type {
 export interface TelemetryPort {
   latestSample(id: LinkId): TelemetrySample | null;
   latestSamples(): ReadonlyMap<LinkId, TelemetrySample>;
+  /**
+   * Samples within `windowMs` of now, bounded by however much history the
+   * implementation actually retains — never padded or fabricated to fill a
+   * window wider than what's held. A request for more than the Simulator's
+   * retention (`SAMPLE_BUFFER_CAPACITY` Ticks) silently returns less, the
+   * same honest-degradation behaviour as an empty result for a Link that
+   * has never reported.
+   */
   history(id: LinkId, windowMs: number): readonly TelemetrySample[];
   summary(): FleetSummary;
   /**
