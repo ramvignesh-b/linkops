@@ -35,6 +35,27 @@ The API seeds ten Links on boot, spread across Bands, Modes and Capacities.
 The seed is a fixed table, not randomly generated, so two boots produce the
 same fleet.
 
+### Filtering and sorting the Fleet
+
+`GET /api/links` narrows and orders the Roster with `status`, `band`, `q`,
+`sort` and `dir` — see the [API reference](#get-apilinks) for the full
+parameter table. Where each filter runs is not arbitrary: `band` and `q` are
+fields the repository owns, so `libs/server/links-data-access` filters on
+them directly. `status` is derived from Samples the repository has never
+seen — giving it that knowledge would make a data-access library depend on
+telemetry, against the layer rule — so status filtering, and the two
+Sample-derived sorts (`status`, `throughputMbps`), happen in
+`libs/server/links-api`, above the repository, once the telemetry port has
+supplied the Sample each one needs. `libs/server/links-data-access` imports
+nothing from `libs/server/telemetry`.
+
+**The Console filters and sorts locally**, over the store it already holds
+from the stream, rather than calling this endpoint's query parameters. The
+server supports them because the contract promises them and a second client
+needs them — refetching on every sort change would fight the stream that is
+keeping the Console's store live. Both are correct; this reference documents
+the server's behaviour without implying the Console exercises it.
+
 ### Deleting a Link
 
 A Link together with its `version` is the unit of concurrent modification;
@@ -62,7 +83,27 @@ already gone.
 
 ### `GET /api/links`
 
-Returns the Fleet Roster with `status` derived per Link.
+Returns the Fleet Roster with `status` derived per Link, filtered and sorted
+per the query string.
+
+| Parameter | Values | Default | Behaviour |
+|---|---|---|---|
+| `status` | `up` \| `degraded` \| `down` | *(none)* | Keeps only Links whose derived `status.status` matches |
+| `band` | `5GHz` \| `5.8GHz` \| `11GHz` \| `24GHz` | *(none)* | Keeps only Links in that Band |
+| `q` | any string | *(none)* | Case-insensitive substring match across `name`, `siteA` and `siteB` |
+| `sort` | `name` \| `capacityMbps` \| `status` \| `throughputMbps` | `name` | The field rows are ordered by |
+| `dir` | `asc` \| `desc` | `asc` | Sort direction |
+
+Filters combine — `?band=5GHz&q=depot` returns only 5GHz Links whose name or
+Sites contain "depot" — rather than one overriding another. Ties on the
+`sort` field always break on `id` ascending, so the order is total and two
+identical requests return an identical result. An unknown `sort` key or `dir`
+value is rejected as `400` `VALIDATION_FAILED`, the same as any other
+malformed query, rather than silently ignored.
+
+Every seeded Link reads `down: stale` until the Simulator lands, so
+`?status=down` returns the whole fleet in this slice — asserted
+deliberately, not a gap.
 
 ```json
 [

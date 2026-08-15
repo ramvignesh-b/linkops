@@ -50,6 +50,163 @@ describe('GET /links', () => {
   });
 });
 
+describe('GET /links filtering and sorting', () => {
+  const server = useServer();
+
+  it('filters by band', async () => {
+    const response = await request(server()).get('/links?band=5GHz');
+
+    expect(response.status).toBe(200);
+    expect(
+      response.body.map((link: { name: string }) => link.name).sort(),
+    ).toEqual(
+      [
+        'North Ridge to Depot',
+        'South Ridge Multipoint',
+        'East Depot to Yard Two',
+      ].sort(),
+    );
+  });
+
+  it('matches q case-insensitively across name, siteA and siteB', async () => {
+    const response = await request(server()).get('/links?q=NORTH RIDGE');
+
+    expect(response.status).toBe(200);
+    expect(response.body.map((link: { name: string }) => link.name)).toEqual([
+      'North Ridge to Depot',
+    ]);
+  });
+
+  it('returns the whole fleet for status=down, since every seeded Link is down for want of data', async () => {
+    const response = await request(server()).get('/links?status=down');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(10);
+  });
+
+  it('combines band and q rather than one overriding the other', async () => {
+    const response = await request(server()).get('/links?band=5GHz&q=depot');
+
+    expect(response.status).toBe(200);
+    expect(
+      response.body.map((link: { name: string }) => link.name).sort(),
+    ).toEqual(['North Ridge to Depot', 'East Depot to Yard Two'].sort());
+  });
+
+  it('defaults to name ascending when sort and dir are both absent', async () => {
+    const response = await request(server()).get('/links');
+
+    expect(response.body.map((link: { name: string }) => link.name)).toEqual([
+      'Control Room to Tower',
+      'Depot to Warehouse',
+      'East Depot to Yard Two',
+      'North Ridge to Depot',
+      'South Ridge Multipoint',
+      'Substation to Control Room',
+      'Tower to East Depot',
+      'Warehouse to Yard',
+      'Yard to South Ridge',
+      'Yard Two Multipoint',
+    ]);
+  });
+
+  it('sorts by name descending', async () => {
+    const response = await request(server()).get('/links?sort=name&dir=desc');
+
+    expect(response.body.map((link: { name: string }) => link.name)).toEqual([
+      'Yard Two Multipoint',
+      'Yard to South Ridge',
+      'Warehouse to Yard',
+      'Tower to East Depot',
+      'Substation to Control Room',
+      'South Ridge Multipoint',
+      'North Ridge to Depot',
+      'East Depot to Yard Two',
+      'Depot to Warehouse',
+      'Control Room to Tower',
+    ]);
+  });
+
+  it('sorts by capacityMbps in both directions', async () => {
+    const ascending = await request(server()).get(
+      '/links?sort=capacityMbps&dir=asc',
+    );
+    const descending = await request(server()).get(
+      '/links?sort=capacityMbps&dir=desc',
+    );
+
+    expect(
+      ascending.body.map((link: { capacityMbps: number }) => link.capacityMbps),
+    ).toEqual([100, 150, 200, 250, 300, 350, 400, 500, 700, 1000]);
+    expect(
+      descending.body.map(
+        (link: { capacityMbps: number }) => link.capacityMbps,
+      ),
+    ).toEqual([1000, 700, 500, 400, 350, 300, 250, 200, 150, 100]);
+  });
+
+  it('breaks a status tie on id ascending, since every seeded Link is down', async () => {
+    const response = await request(server()).get('/links?sort=status');
+
+    expect(response.body.map((link: { id: string }) => link.id)).toEqual([
+      'lnk_0001',
+      'lnk_0002',
+      'lnk_0003',
+      'lnk_0004',
+      'lnk_0005',
+      'lnk_0006',
+      'lnk_0007',
+      'lnk_0008',
+      'lnk_0009',
+      'lnk_0010',
+    ]);
+  });
+
+  it('breaks a throughputMbps tie on id ascending, since no seeded Link has a Sample', async () => {
+    const response = await request(server()).get('/links?sort=throughputMbps');
+
+    expect(response.body.map((link: { id: string }) => link.id)).toEqual([
+      'lnk_0001',
+      'lnk_0002',
+      'lnk_0003',
+      'lnk_0004',
+      'lnk_0005',
+      'lnk_0006',
+      'lnk_0007',
+      'lnk_0008',
+      'lnk_0009',
+      'lnk_0010',
+    ]);
+  });
+
+  it('rejects an unknown sort key as 400 VALIDATION_FAILED rather than ignoring it', async () => {
+    const response = await request(server()).get('/links?sort=siteA');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('rejects a dir that is neither asc nor desc', async () => {
+    const response = await request(server()).get('/links?dir=ascending');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('returns an identical order for two identical requests', async () => {
+    const first = await request(server()).get(
+      '/links?sort=capacityMbps&dir=desc',
+    );
+    const second = await request(server()).get(
+      '/links?sort=capacityMbps&dir=desc',
+    );
+
+    expect(second.body.map((link: { id: string }) => link.id)).toEqual(
+      first.body.map((link: { id: string }) => link.id),
+    );
+  });
+});
+
 describe('GET /links/:id', () => {
   const server = useServer();
 
