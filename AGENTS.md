@@ -4,7 +4,15 @@
 
 ### Issue tracker
 
-Issues and specs live as local markdown files under `.scratch/<feature-slug>/` — this repo has no git remote. See `docs/agents/issue-tracker.md`.
+Issues and specs live as local markdown files under `.scratch/<feature-slug>/` and are mirrored to GitHub Issues on `ramvignesh-b/linkops` for live progress tracking. See `docs/agents/issue-tracker.md`.
+
+### Commit and issue closure conventions
+
+Every ticket implementation commit follows the existing repository commit standard:
+- **Header**: Conventional commit format (`type(scope): subject`).
+- **Body**: Natural, narrative prose explaining the *why*, architectural trade-offs, root causes, and verification evidence—preserving the established documentation voice.
+- **Footer**: Append `Closes #N` on the final line to auto-link and resolve the GitHub issue.
+- **No synthetic bot comments**: Never post canned bot comments (e.g. "Resolved via /implement"). The commit message and git diff provide the durable audit trail.
 
 ### Triage labels
 
