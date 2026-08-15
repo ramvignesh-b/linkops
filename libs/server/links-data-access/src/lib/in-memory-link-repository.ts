@@ -76,6 +76,10 @@ export class InMemoryLinkRepository implements LinkRepository {
     return { ok: true, link: { ...updated } };
   }
 
+  delete(id: LinkId): boolean {
+    return this.links.delete(id);
+  }
+
   count(): number {
     return this.links.size;
   }

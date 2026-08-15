@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Inject,
@@ -101,6 +102,25 @@ export class LinksController {
         // present it, so the Console diffs like against like.
         throw new LinkVersionConflictError(this.present(result.current));
     }
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@Param('id') id: string): void {
+    const linkId = toLinkId(id);
+    const deleted = this.repository.delete(linkId);
+
+    if (!deleted) {
+      throw new LinkNotFoundError(id);
+    }
+
+    // Repository first, dropLink second — load-bearing per CONTEXT.md's
+    // consistency boundary. A Tick racing this delete then either runs
+    // before both (its Sample lands in a buffer that is dropped a moment
+    // later) or after the repository delete (it finds no Link and writes
+    // nothing). The reverse order has a real hole: drop the buffer, Tick
+    // fires, and it is lazily recreated for a Link that no longer exists.
+    this.telemetry.dropLink(linkId);
   }
 
   /** One stored record as the API presents it: status derived, read now. */

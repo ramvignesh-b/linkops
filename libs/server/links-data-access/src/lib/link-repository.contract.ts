@@ -242,6 +242,37 @@ function updateContract(createRepository: () => LinkRepository) {
   });
 }
 
+function deleteContract(createRepository: () => LinkRepository) {
+  describe('delete', () => {
+    it('returns true the first time and false the second', () => {
+      const { repository, link } = seedOne(createRepository);
+
+      expect(repository.delete(link.id)).toBe(true);
+      expect(repository.delete(link.id)).toBe(false);
+    });
+
+    it('removes the Link from findAll and drops the count', () => {
+      const { repository, link } = seedOne(createRepository);
+
+      repository.delete(link.id);
+
+      expect(repository.findById(link.id)).toBeUndefined();
+      expect(repository.count()).toBe(0);
+    });
+
+    it('reports an unknown id as false rather than throwing', () => {
+      const repository = createRepository();
+
+      let result: boolean | undefined;
+      expect(() => {
+        result = repository.delete(toLinkId('lnk_9999'));
+      }).not.toThrow();
+
+      expect(result).toBe(false);
+    });
+  });
+}
+
 /**
  * A reusable contract suite, bound to a factory rather than a class. ADR-0008
  * claims that swapping in a real store touches one file — a suite bound to
@@ -255,5 +286,6 @@ export function runLinkRepositoryContract(
     createContract(createRepository);
     findAllContract(createRepository);
     updateContract(createRepository);
+    deleteContract(createRepository);
   });
 }
