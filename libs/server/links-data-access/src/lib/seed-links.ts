@@ -115,7 +115,11 @@ export function createSeededLinkRepository(): LinkRepository {
   const repository = new InMemoryLinkRepository();
 
   for (const draft of SEED_LINKS) {
-    repository.create(draft);
+    const result = repository.create(draft);
+
+    if (!result.ok) {
+      throw new Error(`Seed data contains a duplicate name: ${draft.name}`);
+    }
   }
 
   return repository;

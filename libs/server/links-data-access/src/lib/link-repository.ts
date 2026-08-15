@@ -43,6 +43,18 @@ export interface LinkFilter {
 }
 
 /**
+ * Name uniqueness is an invariant of the collection, so `create` reports a
+ * duplicate name as a result rather than throwing — the same "repository
+ * knows nothing about HTTP" shape ADR-0008 uses for `update`'s version
+ * conflict. The caller (the controller) turns `ok: false` into the HTTP-aware
+ * `LinkNameTakenError`, exactly as it already turns `findById`'s `undefined`
+ * into `LinkNotFoundError`.
+ */
+export type CreateLinkResult =
+  | { ok: true; link: LinkRecord }
+  | { ok: false; reason: 'name-taken' };
+
+/**
  * The read and create surface this ticket needs. `update` and `delete` join
  * this interface with the tickets that need them (editing and deleting a
  * Link) — per ADR-0008, `update(id, patch, expectedVersion)` returns a
@@ -51,6 +63,6 @@ export interface LinkFilter {
 export interface LinkRepository {
   findById(id: LinkId): LinkRecord | undefined;
   findAll(filter?: LinkFilter): LinkRecord[];
-  create(draft: LinkDraft): LinkRecord;
+  create(draft: LinkDraft): CreateLinkResult;
   count(): number;
 }

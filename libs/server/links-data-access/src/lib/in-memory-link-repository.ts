@@ -1,5 +1,6 @@
 import { toLinkId, type LinkId } from '@linkops/shared/domain';
 import type {
+  CreateLinkResult,
   LinkDraft,
   LinkFilter,
   LinkRecord,
@@ -20,7 +21,11 @@ export class InMemoryLinkRepository implements LinkRepository {
     return stored === undefined ? undefined : { ...stored };
   }
 
-  create(draft: LinkDraft): LinkRecord {
+  create(draft: LinkDraft): CreateLinkResult {
+    if (this.hasName(draft.name)) {
+      return { ok: false, reason: 'name-taken' };
+    }
+
     const now = new Date().toISOString();
     const record: LinkRecord = {
       ...draft,
@@ -32,7 +37,7 @@ export class InMemoryLinkRepository implements LinkRepository {
 
     this.links.set(record.id, record);
 
-    return { ...record };
+    return { ok: true, link: { ...record } };
   }
 
   count(): number {
@@ -52,5 +57,13 @@ export class InMemoryLinkRepository implements LinkRepository {
           link.siteB.toLowerCase().includes(q),
       )
       .map((link) => ({ ...link }));
+  }
+
+  private hasName(name: string): boolean {
+    for (const link of this.links.values()) {
+      if (link.name === name) return true;
+    }
+
+    return false;
   }
 }

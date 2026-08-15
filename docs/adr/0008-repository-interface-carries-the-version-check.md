@@ -11,11 +11,13 @@ Accepted.
 ```
 findById(id)                          → Link | null
 findAll(filter)                       → Link[]
-create(draft)                         → Link
+create(draft)                         → { ok: true, link } | { ok: false, reason: 'name-taken' }
 update(id, patch, expectedVersion)    → { ok: true, link } | { ok: false, current }
 delete(id)                            → boolean
 count()                               → number
 ```
+
+`create`'s result type was added in ticket `18`, once name uniqueness turned out to be an invariant the repository — not the controller — enforces. It wasn't foreseen when this ADR was first written, but it is the same shape for the same reason: a duplicate name is a result the repository knows about, not a throw across a layer that doesn't know it's serving HTTP.
 
 ## Why not `save(link)`
 

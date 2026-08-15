@@ -42,7 +42,7 @@ same fleet.
 | `libs/shared/domain` | The wire schemas (`Link`, `TelemetrySample`, `FleetSummary`), the branded `LinkId`, `deriveStatus` — the one function in the system entitled to an opinion about what "good" is — and the error vocabulary (`ApiErrorBody`, the `code` union, `FieldIssue`, `zodIssuesToFieldIssues`). Framework-free, one runtime dependency: zod. |
 | `libs/server/links-data-access` | `LinkRepository`, its in-memory implementation, and the ten-Link seed. Status is deliberately absent from the stored record — it is derived from Telemetry the repository has never seen. |
 | `libs/server/telemetry` | `TelemetryPort`, the read side of telemetry, landed ahead of its real implementation so the REST surface doesn't change shape when the Simulator arrives. |
-| `libs/server/links-api` | The HTTP surface — `GET /api/links`, `GET /api/links/:id` — and the one exception filter mapping domain errors onto the error envelope. |
+| `libs/server/links-api` | The HTTP surface — `GET /api/links`, `GET /api/links/:id`, `POST /api/links` — the DTOs `createZodDto` generates from the shared schemas, the globally registered `nestjs-zod` validation pipe, and the one exception filter mapping domain errors onto the error envelope. |
 | `apps/api` | Module registration only. |
 
 ## API reference
@@ -105,6 +105,44 @@ request, so drill-down never costs two round trips.
 `status: down, reason: stale`, for the same reason. An unknown id returns
 `404` with the error envelope below.
 
+### `POST /api/links`
+
+Creates a Link from the eight operator-editable fields and returns it at
+`version: 1`, with `createdAt` and `updatedAt` set. The created Link appears
+in a subsequent `GET /api/links`.
+
+```json
+{
+  "name": "North Ridge to Depot",
+  "siteA": "North Ridge",
+  "siteB": "Depot",
+  "band": "5GHz",
+  "mode": "PtP",
+  "capacityMbps": 300,
+  "txPowerDbm": 20,
+  "channelWidthMhz": 40
+}
+```
+
+| Field | Range |
+|---|---|
+| `name` | 3–40 characters, unique |
+| `band` | `5GHz` \| `5.8GHz` \| `11GHz` \| `24GHz` |
+| `mode` | `PtP` \| `PtMP` \| `S2S` |
+| `capacityMbps` | 10–1000 |
+| `txPowerDbm` | −10–30 |
+| `channelWidthMhz` | 20 \| 40 \| 80 |
+
+A `status` or `version` on the request body is not honoured — both are
+stripped by the schema before the request reaches the repository, since
+`status` is derived and `version` is repository-owned. A body outside the
+ranges above returns `400` `VALIDATION_FAILED` naming the offending field; a
+`name` already in use returns `409` `LINK_NAME_TAKEN`.
+
+The DTO validating this body is generated from `linkCreateSchema` with
+`createZodDto()`, and validated by `nestjs-zod`'s pipe, registered globally —
+there is no hand-rolled validation pipe anywhere in this API.
+
 ### Errors
 
 Every failure this API produces — across this endpoint and every one that
@@ -138,9 +176,10 @@ passes through as Nest's default response instead, so a second client can
 tell "the Server said no" from "something else broke" by whether the body
 matches this shape at all.
 
-Only `LINK_NOT_FOUND` is produced by the endpoints in this slice; the other
-members are declared now, ahead of the endpoints that produce them, so a
-client's exhaustive `switch` on `code` never has to grow between slices.
+`LINK_NOT_FOUND`, `LINK_NAME_TAKEN` and `VALIDATION_FAILED` are produced by
+the endpoints in this slice; `LINK_VERSION_CONFLICT` and `A2UI_INVALID_PAYLOAD`
+are declared now, ahead of the endpoints that produce them, so a client's
+exhaustive `switch` on `code` never has to grow between slices.
 
 ## Development
 
