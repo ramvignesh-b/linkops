@@ -33,7 +33,7 @@ import { TELEMETRY_SAMPLE_STORE } from './telemetry-sample-store.token';
     { provide: TELEMETRY_BUS, useFactory: () => new TelemetryBus() },
     // Registered so Nest instantiates and lifecycle-manages it, even though
     // nothing injects it by name — see Simulator.onModuleInit /
-    // onApplicationShutdown and apps/api's app.enableShutdownHooks().
+    // beforeApplicationShutdown and apps/api's app.enableShutdownHooks().
     {
       provide: Simulator,
       useFactory: (

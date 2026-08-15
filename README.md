@@ -101,8 +101,9 @@ separately. `worstLinkId` is `null` only when no Link anywhere has reported.
 |---|---|
 | `libs/shared/domain` | The wire schemas (`Link`, `TelemetrySample`, `FleetSummary`), the branded `LinkId`, `deriveStatus` — the one function in the system entitled to an opinion about what "good" is — and the error vocabulary (`ApiErrorBody`, the `code` union, `FieldIssue`, `zodIssuesToFieldIssues`). Framework-free, one runtime dependency: zod. |
 | `libs/server/links-data-access` | `LinkRepository`, its in-memory implementation, and the ten-Link seed. Status is deliberately absent from the stored record — it is derived from Telemetry the repository has never seen. |
-| `libs/server/telemetry` | `TelemetryPort`, the read side of telemetry, landed ahead of its real implementation so the REST surface doesn't change shape when the Simulator arrives. |
+| `libs/server/telemetry` | The Simulator — one fleet-wide interval, never a timer per Link — the Sample store behind it, `TelemetryPort` as the read side, and `TelemetryBus`, which publishes one Tick to whoever is subscribed. |
 | `libs/server/links-api` | The HTTP surface — `GET /api/links`, `GET /api/links/:id`, `POST /api/links`, `PATCH /api/links/:id`, `DELETE /api/links/:id`, `GET /api/links/:id/telemetry`, `GET /api/fleet/summary` — the DTOs `createZodDto` generates from the shared schemas, the globally registered `nestjs-zod` validation pipe, and the one exception filter mapping domain errors onto the error envelope. |
+| `libs/server/stream-api` | `GET /api/stream`, the Tick-to-events pipeline every connection shares, and the subscriber count that makes release observable. |
 | `apps/api` | Module registration only. |
 
 ## API reference
@@ -357,6 +358,54 @@ among Links that currently have a Sample, ties broken on the lowest `id`;
 Links with no Sample yet are excluded from the selection entirely rather than
 treated as the worst, and the field is `null` only when nothing in the fleet
 has reported.
+
+### `GET /api/stream`
+
+The live Fleet, over Server-Sent Events. One endpoint carries the whole
+catalogue, so a second client never has to discover a second stream:
+
+```
+curl -N http://localhost:3000/api/stream
+```
+
+| Event | Cadence | Payload |
+|---|---|---|
+| `fleet.snapshot` | once, on every connection | `{ tick, ts, links, samples, summary }` |
+| `link.telemetry` | every Tick | `{ tick, ts, samples }` — every Link's Sample as one array element |
+| `fleet.summary` | every Tick | the Fleet Summary, exactly as `GET /api/fleet/summary` returns it |
+
+Each per-Sample object is `telemetrySampleSchema` unchanged — the same shape
+the REST endpoints return, so one parser serves both surfaces. Within a Tick
+the order is a guarantee: `link.telemetry` first, then the `fleet.summary`
+describing the state it just produced, so a header can never contradict the
+rows it is read against. Roster changes and Status transitions are announced
+on this stream in a later slice; the catalogue above is what it carries today.
+
+**One message per Tick, not one per Link.** A fleet of ten produces two
+events a second, and a fleet of a thousand still produces two — see
+[ADR-0004](docs/adr/0004-batched-per-tick-sse-framing.md).
+
+**`id:` is the Tick number**, and every event from one Tick shares it, so a
+client can tell what arrived together. **`Last-Event-ID` is ignored**: this
+server never replays. A reconnecting client resynchronises from the
+`fleet.snapshot` it receives on connect — current state, never a recording of
+what it missed — and that first message carries `retry: 3000`, which is the
+only reconnect policy either side needs
+([ADR-0005](docs/adr/0005-snapshot-on-connect-no-telemetry-replay.md)).
+
+An idle connection receives a comment line, `: hb`, every 15 seconds, from one
+fleet-wide timer rather than one per connection. It keeps traffic flowing
+through whatever sits between server and client, so a quiet Fleet does not
+read as a dead connection, and being a comment it consumes no event id.
+
+`X-Accel-Buffering: no` is already on the response — Nest's own SSE writer
+sets it, along with `Content-Type: text/event-stream`, `Connection:
+keep-alive` and a full no-store `Cache-Control`. Nothing here sets it twice.
+
+Disconnecting releases the subscription immediately; the per-Tick work is done
+once and shared, so a second operator opening the Console costs one
+subscription and no extra work per Tick. Stopping the API ends every open
+response cleanly rather than severing it mid-frame — `curl -N` exits `0`.
 
 ### Errors
 

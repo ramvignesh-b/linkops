@@ -189,7 +189,7 @@ describe('Simulator', () => {
     vi.useRealTimers();
   });
 
-  describe('onApplicationShutdown', () => {
+  describe('beforeApplicationShutdown', () => {
     it('clears the interval so no further Ticks fire', () => {
       vi.useFakeTimers();
       const target = link();
@@ -207,7 +207,7 @@ describe('Simulator', () => {
       vi.advanceTimersByTime(1_000);
       const afterOneTick = store.latestSample(target.id);
 
-      simulator.onApplicationShutdown();
+      simulator.beforeApplicationShutdown();
       vi.advanceTimersByTime(5_000);
 
       expect(store.latestSample(target.id)).toEqual(afterOneTick);
@@ -228,7 +228,7 @@ describe('Simulator', () => {
         fixedRandom,
       );
 
-      simulator.onApplicationShutdown();
+      simulator.beforeApplicationShutdown();
 
       expect(completed).toBe(true);
     });
@@ -245,7 +245,7 @@ describe('Simulator', () => {
         fixedRandom,
       );
 
-      expect(() => simulator.onApplicationShutdown()).not.toThrow();
+      expect(() => simulator.beforeApplicationShutdown()).not.toThrow();
     });
   });
 

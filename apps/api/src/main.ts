@@ -14,7 +14,7 @@ async function bootstrap() {
   // what registers the SIGTERM/SIGINT listener that does, on a container
   // stop or Ctrl-C. Without it, the process only dies (or is killed), close()
   // never runs, and the Simulator's interval and TelemetryBus never get the
-  // chance to stop cleanly. See Simulator.onApplicationShutdown.
+  // chance to stop cleanly. See Simulator.beforeApplicationShutdown.
   app.enableShutdownHooks();
   const globalPrefix = 'api';
   app.setGlobalPrefix(globalPrefix);
