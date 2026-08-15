@@ -26,3 +26,9 @@ On the client this has a concrete consequence worth naming: one frame produces *
 
 - Every SSE consumer must handle an array, including a one-line `curl -N`. The README event catalogue therefore shows the frame shape, not a single sample.
 - The edge-triggered events are the only way a client learns about status transitions and fleet membership changes. A client that ignores them and reads only `link.telemetry` will show a stale roster — see [ADR-0005](./0005-snapshot-on-connect-no-telemetry-replay.md) for the recovery path.
+
+## Amendment — `link.updated`, a seventh event
+
+The catalogue this ADR named — `link.status`, `link.created`, `link.deleted` — closed the hole for Fleet *membership*: a Link created or deleted in one tab now shows up in another. The same hole existed for *configuration*: a `PATCH` in one tab left stale `capacityMbps` in every other client until it reloaded, which matters precisely because Throughput is only meaningful against Capacity. `link.updated` closes it, edge-triggered on a `version` change, carrying the Link with its Status derived — the same payload shape `link.created` carries.
+
+Detecting it costs nothing beyond what the Roster diff already computes: `link.status` needs a previous-versus-current comparison no matter where it is published from, so the diff exists either way, and a `version` comparison per Link is one more field read inside a loop it already runs. All four edge-triggered events — `link.created`, `link.updated`, `link.deleted`, `link.status` — come from one per-Tick Roster diff inside `server/stream-api`, never from a mutation-time publish in `server/links-api`: a diff anchored to the Tick cannot race the telemetry frame the way a mutation-time publish can, and `type:feature` → `type:feature` is banned by the boundary rules regardless.

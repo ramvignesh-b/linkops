@@ -371,15 +371,37 @@ curl -N http://localhost:3000/api/stream
 | Event | Cadence | Payload |
 |---|---|---|
 | `fleet.snapshot` | once, on every connection | `{ tick, ts, links, samples, summary }` |
+| `link.created` | edge-triggered | the Link, status derived |
+| `link.updated` | edge-triggered, on a `version` change | the Link, status derived |
+| `link.deleted` | edge-triggered | `{ linkId }` |
 | `link.telemetry` | every Tick | `{ tick, ts, samples }` — every Link's Sample as one array element |
+| `link.status` | edge-triggered, on a Status change | `{ linkId, status, previous }`, `status`/`previous` carrying `reason` when `down` |
 | `fleet.summary` | every Tick | the Fleet Summary, exactly as `GET /api/fleet/summary` returns it |
 
 Each per-Sample object is `telemetrySampleSchema` unchanged — the same shape
 the REST endpoints return, so one parser serves both surfaces. Within a Tick
-the order is a guarantee: `link.telemetry` first, then the `fleet.summary`
-describing the state it just produced, so a header can never contradict the
-rows it is read against. Roster changes and Status transitions are announced
-on this stream in a later slice; the catalogue above is what it carries today.
+the order is a guarantee: membership first (`link.created`, `link.updated`,
+`link.deleted`), then `link.telemetry`, then `link.status`, then
+`fleet.summary` — a client is never handed a Sample for a Link it has not
+been told about, nor a Status transition derived from a Sample it has not
+yet seen, and the Summary always arrives last, describing the state
+everything before it just produced.
+
+`link.created`, `link.updated`, `link.deleted` and `link.status` are
+**edge-triggered**: produced by a per-Tick diff of the Roster against the
+Tick before it, computed once regardless of how many clients are connected,
+and emitted only on the Tick a change is first seen — never repeated on the
+Tick after. A Link is `link.created` the Tick its id first appears — with
+`down: stale` and no Sample yet, if it was created between the Simulator's
+own Roster read and the diff's, the same thing `GET /api/links` would say
+about it at that instant. It is `link.updated` on a Tick its `version`
+moves, carrying its current configuration and derived Status. It is
+`link.deleted` the Tick its id stops appearing — closing the delete-while-
+streaming case: one `link.deleted`, no orphaned Sample in any later frame,
+and no crash. `link.status` fires on a derived Status change and carries
+`previous`, the Status the diff just replaced, so a client can say "went
+degraded" rather than "is degraded" — computed exactly as `GET /api/links`
+computes it, never a second derivation path.
 
 **One message per Tick, not one per Link.** A fleet of ten produces two
 events a second, and a fleet of a thousand still produces two — see

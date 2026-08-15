@@ -1,5 +1,7 @@
 import {
   fleetSnapshotSchema,
+  linkDeletedEventSchema,
+  linkStatusEventSchema,
   linkTelemetryEventSchema,
   streamEventSchema,
 } from './stream-events';
@@ -96,6 +98,36 @@ describe('fleetSnapshotSchema', () => {
   });
 });
 
+describe('linkDeletedEventSchema', () => {
+  it('accepts the id of the Link that vanished from the Roster', () => {
+    const result = linkDeletedEventSchema.safeParse({ linkId: 'lnk_0001' });
+
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('linkStatusEventSchema', () => {
+  it('accepts a transition carrying both the new Status and the one it replaced', () => {
+    const result = linkStatusEventSchema.safeParse({
+      linkId: 'lnk_0001',
+      status: { status: 'down', reason: 'metrics' },
+      previous: { status: 'up' },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a status missing the reason a down transition requires', () => {
+    const result = linkStatusEventSchema.safeParse({
+      linkId: 'lnk_0001',
+      status: { status: 'down' },
+      previous: { status: 'up' },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('streamEventSchema', () => {
   it('discriminates each event in the catalogue by its name', () => {
     expect(
@@ -111,6 +143,30 @@ describe('streamEventSchema', () => {
     expect(
       streamEventSchema.safeParse({ event: 'fleet.summary', data: summary })
         .success,
+    ).toBe(true);
+    expect(
+      streamEventSchema.safeParse({ event: 'link.created', data: link })
+        .success,
+    ).toBe(true);
+    expect(
+      streamEventSchema.safeParse({ event: 'link.updated', data: link })
+        .success,
+    ).toBe(true);
+    expect(
+      streamEventSchema.safeParse({
+        event: 'link.deleted',
+        data: { linkId: 'lnk_0001' },
+      }).success,
+    ).toBe(true);
+    expect(
+      streamEventSchema.safeParse({
+        event: 'link.status',
+        data: {
+          linkId: 'lnk_0001',
+          status: { status: 'up' },
+          previous: { status: 'down', reason: 'stale' },
+        },
+      }).success,
     ).toBe(true);
   });
 
