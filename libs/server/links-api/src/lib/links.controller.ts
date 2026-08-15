@@ -49,7 +49,8 @@ export class LinksController {
   @ApiResponse({
     status: 400,
     type: ApiErrorEnvelopeDto,
-    description: 'VALIDATION_FAILED — an unknown `sort` key or `dir` value',
+    description:
+      'VALIDATION_FAILED — an unknown `sort` key, an invalid `dir`, `status` or `band` value',
   })
   findAll(@Query() query: LinkListQueryDto): Link[] {
     const now = new Date();
