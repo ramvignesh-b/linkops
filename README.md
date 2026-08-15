@@ -107,6 +107,27 @@ separately. `worstLinkId` is `null` only when no Link anywhere has reported.
 
 ## API reference
 
+### OpenAPI document
+
+A generated OpenAPI document is served at `GET /api/openapi.json` — always
+available, no config flag required. It covers every endpoint below: request
+and response shapes come from the same `linkCreateSchema`, `linkPatchSchema`,
+`linkSchema`, `telemetrySampleSchema` and `fleetSummarySchema` the server
+validates and reads with, generated into DTOs via `createZodDto()` rather
+than hand-described, and the error envelope schema documents the `message`-
+is-diagnostic rule alongside every member of the closed `code` union (see
+[Errors](#errors) below). Because one schema drives both the validation pipe
+and the document, a range that changes in `shared/domain` changes the
+document with no second edit anywhere — see
+[ADR-0006](docs/adr/0006-shared-zod-schema-as-the-contract.md).
+
+The interactive Swagger explorer (`SwaggerModule.setup()`) is **not**
+mounted in this slice. Its gate is a config variable that belongs to ticket
+`05`; until that lands, `GET /api/openapi.json` is the whole of the
+generated surface — an unauthenticated, `DELETE`-capable explorer is a
+different proposition on a host managing live radio infrastructure than on a
+developer's laptop.
+
 ### `GET /api/links`
 
 Returns the Fleet Roster with `status` derived per Link, filtered and sorted
