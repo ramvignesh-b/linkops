@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import {
   LINK_REPOSITORY,
   createSeededLinkRepository,
@@ -8,12 +9,14 @@ import {
   TELEMETRY_PORT,
 } from '@linkops/server/telemetry';
 import { LinksController } from './links.controller';
+import { LinkDomainErrorFilter } from './link-domain-error.filter';
 
 @Module({
   controllers: [LinksController],
   providers: [
     { provide: LINK_REPOSITORY, useFactory: createSeededLinkRepository },
     { provide: TELEMETRY_PORT, useClass: NoSampleTelemetryPort },
+    { provide: APP_FILTER, useClass: LinkDomainErrorFilter },
   ],
   exports: [],
 })
