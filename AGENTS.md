@@ -13,6 +13,8 @@ Every ticket implementation commit follows the existing repository commit standa
 - **Scope**: the platform axis touched (`domain`, `server`, `console`), per ADR-0009's three-axis tagging. If a ticket's diff spans more than one axis, split it into one commit per axis, in dependency order, and put `Closes #N` only on the last one; earlier commits use `Refs #N` instead.
 - **Body**: Natural, narrative prose explaining the *why*, architectural trade-offs, root causes, and verification evidence—preserving the established documentation voice.
 - **Footer**: Append `Closes #N` on the final line to auto-link and resolve the GitHub issue.
+
+Each ticket gets one branch and one PR against `main`, named `<issue-number>-<slug>` (e.g. `1-fleet-roster-over-http`) — matching GitHub's own suggested name for an issue-linked branch, not the ticket's local `.scratch/` number. The PR title is a scope-free `type: subject` line summarizing the ticket as a whole, since the PR can bundle multiple axis-scoped commits; the body states what changed, the non-obvious reasoning, and verification, ending with `Closes #N`.
 - **No synthetic bot comments**: Never post canned bot comments (e.g. "Resolved via /implement"). The commit message and git diff provide the durable audit trail.
 
 ### Triage labels
