@@ -15,3 +15,11 @@ export const linkStatusSchema = z.discriminatedUnion('status', [
 ]);
 
 export type LinkStatus = z.infer<typeof linkStatusSchema>;
+
+/**
+ * The `status` kind alone, with no `reason` — what a filter or a sort key
+ * compares against. `linkStatusSchema` stays the wire shape for a Link
+ * itself; this is `linkStatusSchema`'s discriminant lifted out for reuse.
+ */
+export const linkStatusKindSchema = z.enum(['up', 'degraded', 'down']);
+export type LinkStatusKind = z.infer<typeof linkStatusKindSchema>;
