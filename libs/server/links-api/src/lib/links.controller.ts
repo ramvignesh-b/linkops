@@ -84,27 +84,32 @@ export class LinksController {
     const result = this.repository.update(toLinkId(id), patch, version);
 
     if (result.ok) {
-      return withStatus(
-        result.link,
-        this.telemetry.latestSample(result.link.id),
-        new Date(),
-      );
+      return this.present(result.link);
     }
 
+    // Exhaustive on purpose, and more load-bearing here than on `create`:
+    // ADR-0008 says a fourth way for a write to miss must break every caller,
+    // and `noImplicitReturns` is what makes that a compile error rather than
+    // a silent mislabel.
     switch (result.reason) {
       case 'not-found':
         throw new LinkNotFoundError(id);
       case 'name-taken':
         throw new LinkNameTakenError(result.name);
       case 'version-conflict':
-        throw new LinkVersionConflictError(
-          withStatus(
-            result.current,
-            this.telemetry.latestSample(result.current.id),
-            new Date(),
-          ),
-        );
+        // The whole current Link, derived exactly as a successful read would
+        // present it, so the Console diffs like against like.
+        throw new LinkVersionConflictError(this.present(result.current));
     }
+  }
+
+  /** One stored record as the API presents it: status derived, read now. */
+  private present(record: LinkRecord): Link {
+    return withStatus(
+      record,
+      this.telemetry.latestSample(record.id),
+      new Date(),
+    );
   }
 }
 
