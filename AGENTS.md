@@ -10,6 +10,7 @@ Issues and specs live as local markdown files under `.scratch/<feature-slug>/` a
 
 Every ticket implementation commit follows the existing repository commit standard:
 - **Header**: Conventional commit format (`type(scope): subject`).
+- **Scope**: the platform axis touched (`domain`, `server`, `console`), per ADR-0009's three-axis tagging. If a ticket's diff spans more than one axis, split it into one commit per axis, in dependency order, and put `Closes #N` only on the last one; earlier commits use `Refs #N` instead.
 - **Body**: Natural, narrative prose explaining the *why*, architectural trade-offs, root causes, and verification evidence—preserving the established documentation voice.
 - **Footer**: Append `Closes #N` on the final line to auto-link and resolve the GitHub issue.
 - **No synthetic bot comments**: Never post canned bot comments (e.g. "Resolved via /implement"). The commit message and git diff provide the durable audit trail.
