@@ -1,6 +1,12 @@
 import { Catch, type ArgumentsHost } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
-import type { ApiErrorBody } from '@linkops/shared/domain';
+import { ZodValidationException } from 'nestjs-zod';
+import type { z } from 'zod';
+import {
+  type ApiErrorBody,
+  zodIssuesToFieldIssues,
+} from '@linkops/shared/domain';
+import { LinkNameTakenError } from './errors/link-name-taken.error';
 import { LinkNotFoundError } from './errors/link-not-found.error';
 
 /**
@@ -13,19 +19,41 @@ import { LinkNotFoundError } from './errors/link-not-found.error';
 export class LinkDomainErrorFilter extends BaseExceptionFilter {
   override catch(exception: unknown, host: ArgumentsHost): void {
     if (exception instanceof LinkNotFoundError) {
-      const body: ApiErrorBody = {
+      this.respond(host, 404, {
         code: 'LINK_NOT_FOUND',
         message: exception.message,
         details: { id: exception.id },
-      };
+      });
 
-      host.switchToHttp().getResponse().status(404).json({
-        error: body,
+      return;
+    }
+
+    if (exception instanceof ZodValidationException) {
+      const zodError = exception.getZodError() as z.ZodError;
+
+      this.respond(host, 400, {
+        code: 'VALIDATION_FAILED',
+        message: exception.message,
+        details: { issues: zodIssuesToFieldIssues(zodError.issues) },
+      });
+
+      return;
+    }
+
+    if (exception instanceof LinkNameTakenError) {
+      this.respond(host, 409, {
+        code: 'LINK_NAME_TAKEN',
+        message: exception.message,
+        details: { name: exception.linkName },
       });
 
       return;
     }
 
     super.catch(exception, host);
+  }
+
+  private respond(host: ArgumentsHost, status: number, body: ApiErrorBody) {
+    host.switchToHttp().getResponse().status(status).json({ error: body });
   }
 }

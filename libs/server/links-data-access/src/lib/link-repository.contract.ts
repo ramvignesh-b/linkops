@@ -12,36 +12,44 @@ const draft = (overrides: Partial<LinkDraft> = {}): LinkDraft => ({
   ...overrides,
 });
 
-/**
- * A reusable contract suite, bound to a factory rather than a class. ADR-0008
- * claims that swapping in a real store touches one file — a suite bound to
- * InMemoryLinkRepository could not verify that claim, and one taking a
- * factory can be pointed at the replacement unchanged.
- */
-export function runLinkRepositoryContract(
-  createRepository: () => LinkRepository,
-) {
-  describe('LinkRepository contract', () => {
+function createContract(createRepository: () => LinkRepository) {
+  describe('create', () => {
     it('creates a Link and finds it by id', () => {
       const repository = createRepository();
 
-      const created = repository.create(draft());
-      const found = repository.findById(created.id);
+      const result = repository.create(draft());
+      if (!result.ok) throw new Error('expected create to succeed');
+      const found = repository.findById(result.link.id);
 
-      expect(found).toEqual(created);
+      expect(found).toEqual(result.link);
     });
 
     it('returns a Link that is not the stored instance', () => {
       const repository = createRepository();
 
-      const created = repository.create(draft());
-      created.name = 'Corrupted';
+      const result = repository.create(draft());
+      if (!result.ok) throw new Error('expected create to succeed');
+      result.link.name = 'Corrupted';
 
-      expect(repository.findById(created.id)?.name).toBe(
+      expect(repository.findById(result.link.id)?.name).toBe(
         'North Ridge to Depot',
       );
     });
 
+    it('refuses a duplicate name on create', () => {
+      const repository = createRepository();
+
+      repository.create(draft({ name: 'North Ridge to Depot' }));
+      const result = repository.create(
+        draft({ name: 'North Ridge to Depot', siteA: 'Elsewhere' }),
+      );
+
+      expect(result).toEqual({ ok: false, reason: 'name-taken' });
+      expect(repository.count()).toBe(1);
+    });
+  });
+
+  describe('count', () => {
     it('counts the Links created so far', () => {
       const repository = createRepository();
 
@@ -52,21 +60,26 @@ export function runLinkRepositoryContract(
 
       expect(repository.count()).toBe(2);
     });
+  });
+}
 
-    it('findAll filters by Band', () => {
+function findAllContract(createRepository: () => LinkRepository) {
+  describe('findAll', () => {
+    it('filters by Band', () => {
       const repository = createRepository();
 
       const fiveGig = repository.create(
         draft({ name: 'Five Gig Link', band: '5GHz' }),
       );
       repository.create(draft({ name: 'Eleven Gig Link', band: '11GHz' }));
+      if (!fiveGig.ok) throw new Error('expected create to succeed');
 
       const found = repository.findAll({ band: '5GHz' });
 
-      expect(found.map((link) => link.id)).toEqual([fiveGig.id]);
+      expect(found.map((link) => link.id)).toEqual([fiveGig.link.id]);
     });
 
-    it('findAll filters by q across name, siteA and siteB', () => {
+    it('filters by q across name, siteA and siteB', () => {
       const repository = createRepository();
 
       const match = repository.create(
@@ -75,10 +88,26 @@ export function runLinkRepositoryContract(
       repository.create(
         draft({ name: 'Warehouse Link', siteA: 'Warehouse', siteB: 'Yard' }),
       );
+      if (!match.ok) throw new Error('expected create to succeed');
 
       const found = repository.findAll({ q: 'depot' });
 
-      expect(found.map((link) => link.id)).toEqual([match.id]);
+      expect(found.map((link) => link.id)).toEqual([match.link.id]);
     });
+  });
+}
+
+/**
+ * A reusable contract suite, bound to a factory rather than a class. ADR-0008
+ * claims that swapping in a real store touches one file — a suite bound to
+ * InMemoryLinkRepository could not verify that claim, and one taking a
+ * factory can be pointed at the replacement unchanged.
+ */
+export function runLinkRepositoryContract(
+  createRepository: () => LinkRepository,
+) {
+  describe('LinkRepository contract', () => {
+    createContract(createRepository);
+    findAllContract(createRepository);
   });
 }

@@ -1,4 +1,12 @@
-import { Controller, Get, Inject, Param } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Post,
+} from '@nestjs/common';
 import {
   deriveStatus,
   toLinkId,
@@ -11,6 +19,8 @@ import {
   type LinkRepository,
 } from '@linkops/server/links-data-access';
 import { TELEMETRY_PORT, type TelemetryPort } from '@linkops/server/telemetry';
+import { LinkCreateDto } from './dto/link-create.dto';
+import { LinkNameTakenError } from './errors/link-name-taken.error';
 import { LinkNotFoundError } from './errors/link-not-found.error';
 
 @Controller('links')
@@ -46,6 +56,23 @@ export class LinksController {
     const latestSample = this.telemetry.latestSample(linkId);
 
     return { link: withStatus(record, latestSample, new Date()), latestSample };
+  }
+
+  @Post()
+  @HttpCode(201)
+  create(@Body() dto: LinkCreateDto): Link {
+    const result = this.repository.create(dto);
+
+    if (result.ok) {
+      return withStatus(result.link, null, new Date());
+    }
+
+    // Exhaustive on purpose: `noImplicitReturns` makes a reason this switch
+    // doesn't cover a compile error, not a silent mislabel.
+    switch (result.reason) {
+      case 'name-taken':
+        throw new LinkNameTakenError(dto.name);
+    }
   }
 }
 

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_PIPE } from '@nestjs/core';
+import { ZodValidationPipe } from 'nestjs-zod';
 import {
   LINK_REPOSITORY,
   createSeededLinkRepository,
@@ -17,6 +18,7 @@ import { LinkDomainErrorFilter } from './link-domain-error.filter';
     { provide: LINK_REPOSITORY, useFactory: createSeededLinkRepository },
     { provide: TELEMETRY_PORT, useClass: NoSampleTelemetryPort },
     { provide: APP_FILTER, useClass: LinkDomainErrorFilter },
+    { provide: APP_PIPE, useClass: ZodValidationPipe },
   ],
   exports: [],
 })
