@@ -18,7 +18,7 @@ export interface TelemetryTick {
  * One notification per Tick, each carrying every Sample that Tick produced
  * — the batching ADR-0004 asks for. `complete()` is the other half of the
  * Simulator's shutdown contract, alongside `clearInterval` — see
- * `Simulator.onApplicationShutdown`.
+ * `Simulator.beforeApplicationShutdown`.
  */
 export class TelemetryBus {
   private readonly subject = new Subject<TelemetryTick>();

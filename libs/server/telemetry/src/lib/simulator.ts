@@ -1,4 +1,4 @@
-import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
+import type { BeforeApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import type { LinkRepository } from '@linkops/server/links-data-access';
 import type { LinkId, TelemetrySample } from '@linkops/shared/domain';
 import type { Clock } from './clock';
@@ -17,7 +17,7 @@ export const TICK_MS = 1_000;
  * simply absent from that read, so "no ghost telemetry" is structural here
  * rather than something this class has to remember to check for.
  */
-export class Simulator implements OnModuleInit, OnApplicationShutdown {
+export class Simulator implements OnModuleInit, BeforeApplicationShutdown {
   private handle: ReturnType<typeof setInterval> | undefined;
 
   /**
@@ -45,11 +45,24 @@ export class Simulator implements OnModuleInit, OnApplicationShutdown {
     private readonly random: Random,
   ) {}
 
+  /** Ticks run since boot — see `tickCount`. */
+  get ticks(): number {
+    return this.tickCount;
+  }
+
   onModuleInit(): void {
     this.handle = setInterval(() => this.tick(), TICK_MS);
   }
 
-  onApplicationShutdown(): void {
+  /**
+   * `beforeApplicationShutdown`, not `onApplicationShutdown`, and the
+   * difference is load-bearing: Nest closes the HTTP server between the two,
+   * and closing it waits for every open response to end. An SSE response
+   * ends when the Bus completes, so completing the Bus after the close would
+   * be waiting on itself. Stopping the Fleet first is what lets a shutdown
+   * end each stream cleanly instead of severing it.
+   */
+  beforeApplicationShutdown(): void {
     if (this.handle !== undefined) {
       clearInterval(this.handle);
       this.handle = undefined;

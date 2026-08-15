@@ -13,8 +13,8 @@ import {
 import { ApiResponse } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import {
-  deriveStatus,
   toLinkId,
+  withDerivedStatus,
   type Link,
   type TelemetrySample,
 } from '@linkops/shared/domain';
@@ -88,7 +88,10 @@ export class LinksController {
 
     const latestSample = this.telemetry.latestSample(linkId);
 
-    return { link: withStatus(record, latestSample, new Date()), latestSample };
+    return {
+      link: withDerivedStatus(record, latestSample, new Date()),
+      latestSample,
+    };
   }
 
   @Get(':id/telemetry')
@@ -134,7 +137,7 @@ export class LinksController {
     const result = this.repository.create(dto);
 
     if (result.ok) {
-      return withStatus(result.link, null, new Date());
+      return withDerivedStatus(result.link, null, new Date());
     }
 
     // Exhaustive on purpose: `noImplicitReturns` makes a reason this switch
@@ -211,7 +214,7 @@ export class LinksController {
 
   /** One stored record as the API presents it: status derived, read now. */
   private present(record: LinkRecord): Link {
-    return withStatus(
+    return withDerivedStatus(
       record,
       this.telemetry.latestSample(record.id),
       new Date(),
@@ -223,17 +226,8 @@ export class LinksController {
     const latestSample = this.telemetry.latestSample(record.id);
 
     return {
-      link: withStatus(record, latestSample, now),
+      link: withDerivedStatus(record, latestSample, now),
       throughputMbps: latestSample?.throughputMbps ?? 0,
     };
   }
-}
-
-/** Status is never stored — every Link leaving this controller has it derived fresh. */
-function withStatus(
-  record: LinkRecord,
-  latestSample: TelemetrySample | null,
-  now: Date,
-): Link {
-  return { ...record, status: deriveStatus(record, latestSample, now) };
 }
