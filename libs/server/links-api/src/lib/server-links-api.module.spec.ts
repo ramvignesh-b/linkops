@@ -207,6 +207,77 @@ describe('GET /links filtering and sorting', () => {
   });
 });
 
+describe('GET /links/:id/telemetry', () => {
+  const server = useServer();
+
+  it('returns an empty array for a seeded Link, since the Simulator has not landed', async () => {
+    const response = await request(server()).get(
+      '/links/lnk_0001/telemetry?window=5m',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+  });
+
+  it('defaults window to 5 minutes when the query string omits it', async () => {
+    const response = await request(server()).get('/links/lnk_0001/telemetry');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+  });
+
+  it('rejects an unparseable window as 400 VALIDATION_FAILED', async () => {
+    const response = await request(server()).get(
+      '/links/lnk_0001/telemetry?window=bogus',
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('answers an unknown Link with the project error envelope', async () => {
+    const response = await request(server()).get(
+      '/links/lnk_9999/telemetry?window=5m',
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: {
+        code: 'LINK_NOT_FOUND',
+        message: 'Link lnk_9999 not found',
+        details: { id: 'lnk_9999' },
+      },
+    });
+  });
+});
+
+describe('GET /fleet/summary', () => {
+  const server = useServer();
+
+  it('reports a total matching the seed count, every Link down, and no worst Link', async () => {
+    const response = await request(server()).get('/fleet/summary');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      total: 10,
+      up: 0,
+      degraded: 0,
+      down: 10,
+      totalThroughputMbps: 0,
+      worstLinkId: null,
+    });
+  });
+
+  it('reflects a created Link in the total on the next read', async () => {
+    await request(server()).post('/links').send(validCreateBody);
+
+    const response = await request(server()).get('/fleet/summary');
+
+    expect(response.body.total).toBe(11);
+    expect(response.body.down).toBe(11);
+  });
+});
+
 describe('GET /links/:id', () => {
   const server = useServer();
 

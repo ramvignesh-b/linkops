@@ -69,6 +69,32 @@ port to drop its Samples: repository-first means the Simulator, which reads
 the Roster fresh every Tick, can never produce a Sample for a Link that is
 already gone.
 
+### Telemetry history and the Fleet Summary
+
+`GET /api/links/:id/telemetry?window=5m` and `GET /api/fleet/summary` are the
+two remaining reads the API promises, and both go through `TelemetryPort`
+rather than the repository — the repository only ever answers "does this Link
+exist", never "what has it reported". Until the Simulator lands, the answer
+both endpoints give is the honest one for a fleet that has never reported: an
+empty history, and a Summary where every Link is `down`, every total is zero,
+and `worstLinkId` is `null`. Pinning that now is what makes the next slice's
+arrival of real Samples a visible change rather than a silent one.
+
+**The Summary is server-authoritative, and the Console never aggregates it.**
+`FleetController` renders `TelemetryPort.summary()` verbatim — no counting,
+no filtering, no combining it with the repository happens in
+`server/links-api`. The redundancy of computing the same numbers twice, once
+on the server and once on the Console, is removed rather than arbitrated: a
+Tick applies as one atomic store write on the Console, so the KPI header can
+never contradict the list beneath it.
+
+**`worstLinkId` is a selection, not an aggregate.** It is the lowest `snrDb`
+among Links that currently have a Sample, ties broken on the lowest `id` so
+the choice is deterministic across Ticks, and Links with no Sample yet are
+excluded entirely — a Link with no reading is not the worst Link in the
+fleet, it is an unknown one, and `status: down, reason: stale` already says so
+separately. `worstLinkId` is `null` only when no Link anywhere has reported.
+
 ### Where things live
 
 | Library | Owns |
@@ -76,7 +102,7 @@ already gone.
 | `libs/shared/domain` | The wire schemas (`Link`, `TelemetrySample`, `FleetSummary`), the branded `LinkId`, `deriveStatus` — the one function in the system entitled to an opinion about what "good" is — and the error vocabulary (`ApiErrorBody`, the `code` union, `FieldIssue`, `zodIssuesToFieldIssues`). Framework-free, one runtime dependency: zod. |
 | `libs/server/links-data-access` | `LinkRepository`, its in-memory implementation, and the ten-Link seed. Status is deliberately absent from the stored record — it is derived from Telemetry the repository has never seen. |
 | `libs/server/telemetry` | `TelemetryPort`, the read side of telemetry, landed ahead of its real implementation so the REST surface doesn't change shape when the Simulator arrives. |
-| `libs/server/links-api` | The HTTP surface — `GET /api/links`, `GET /api/links/:id`, `POST /api/links`, `PATCH /api/links/:id`, `DELETE /api/links/:id` — the DTOs `createZodDto` generates from the shared schemas, the globally registered `nestjs-zod` validation pipe, and the one exception filter mapping domain errors onto the error envelope. |
+| `libs/server/links-api` | The HTTP surface — `GET /api/links`, `GET /api/links/:id`, `POST /api/links`, `PATCH /api/links/:id`, `DELETE /api/links/:id`, `GET /api/links/:id/telemetry`, `GET /api/fleet/summary` — the DTOs `createZodDto` generates from the shared schemas, the globally registered `nestjs-zod` validation pipe, and the one exception filter mapping domain errors onto the error envelope. |
 | `apps/api` | Module registration only. |
 
 ## API reference
@@ -266,6 +292,50 @@ subsequent `GET /api/links`, and `GET /api/links/:id` for it returns `404`
 The repository delete runs first, and the telemetry port's `dropLink(id)`
 runs second — see [Deleting a Link](#deleting-a-link) above for why that
 order is load-bearing.
+
+### `GET /api/links/:id/telemetry`
+
+Returns the recent Telemetry Samples for one Link — what the detail view's
+sparkline draws from.
+
+| Parameter | Values | Default | Behaviour |
+|---|---|---|---|
+| `window` | a number followed by `s`, `m` or `h`, e.g. `30s`, `5m`, `1h` | `5m` | How far back to look for Samples |
+
+```json
+[]
+```
+
+Every seeded Link returns an empty array in this slice, since no Sample has
+ever been produced — the same honest answer as `status: down, reason: stale`
+on `GET /api/links`. A `window` that does not match the pattern above returns
+`400` `VALIDATION_FAILED` naming `window` as the offending field. An unknown
+Link id returns `404` `LINK_NOT_FOUND`, checked against the repository —
+existence is a Roster question, not a telemetry one.
+
+### `GET /api/fleet/summary`
+
+Returns the Fleet Summary — the counts and totals a KPI header renders,
+computed once by `server/telemetry` and never recomputed by a client.
+
+```json
+{
+  "total": 10,
+  "up": 0,
+  "degraded": 0,
+  "down": 10,
+  "totalThroughputMbps": 0,
+  "worstLinkId": null
+}
+```
+
+Every seeded Link counts as `down` and `worstLinkId` is `null` in this slice,
+for the same reason every Link reads `down: stale` on `GET /api/links` — no
+Link has ever produced a Sample. `worstLinkId` selects the lowest `snrDb`
+among Links that currently have a Sample, ties broken on the lowest `id`;
+Links with no Sample yet are excluded from the selection entirely rather than
+treated as the worst, and the field is `null` only when nothing in the fleet
+has reported.
 
 ### Errors
 

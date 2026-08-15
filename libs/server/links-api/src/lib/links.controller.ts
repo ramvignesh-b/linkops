@@ -25,6 +25,7 @@ import { TELEMETRY_PORT, type TelemetryPort } from '@linkops/server/telemetry';
 import { LinkCreateDto } from './dto/link-create.dto';
 import { LinkListQueryDto } from './dto/link-list-query.dto';
 import { LinkPatchDto } from './dto/link-patch.dto';
+import { TelemetryWindowQueryDto } from './dto/telemetry-window-query.dto';
 import { LinkNameTakenError } from './errors/link-name-taken.error';
 import { LinkNotFoundError } from './errors/link-not-found.error';
 import { LinkVersionConflictError } from './errors/link-version-conflict.error';
@@ -73,6 +74,23 @@ export class LinksController {
     const latestSample = this.telemetry.latestSample(linkId);
 
     return { link: withStatus(record, latestSample, new Date()), latestSample };
+  }
+
+  @Get(':id/telemetry')
+  history(
+    @Param('id') id: string,
+    @Query() query: TelemetryWindowQueryDto,
+  ): readonly TelemetrySample[] {
+    const linkId = toLinkId(id);
+
+    // Existence is a Roster question, answered by the repository — the
+    // Samples themselves never come from it. An unknown Link is 404 before
+    // the port is asked for anything.
+    if (this.repository.findById(linkId) === undefined) {
+      throw new LinkNotFoundError(id);
+    }
+
+    return this.telemetry.history(linkId, query.windowMs);
   }
 
   @Post()
