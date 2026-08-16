@@ -6,12 +6,25 @@ import {
 } from '@angular/core';
 import {
   bandSchema,
+  linkSortKeySchema,
   linkStatusKindSchema,
   type Band,
   type LinkSortKey,
   type LinkStatusKind,
   type SortDir,
 } from '@linkops/shared/domain';
+
+/**
+ * The word each sort key shows in the control. Keyed with `Record`, not a
+ * plain object, so a sort key `linkSortKeySchema` gains and this map does not
+ * is a compile error rather than a dropdown silently missing an entry.
+ */
+const SORT_LABELS: Record<LinkSortKey, string> = {
+  name: 'Name',
+  capacityMbps: 'Capacity',
+  status: 'Status',
+  throughputMbps: 'Throughput',
+};
 
 /**
  * The controls over the Fleet list: Status, Band and free text to filter by,
@@ -131,12 +144,10 @@ export class FleetFilterBar {
 
   protected readonly statusOptions = linkStatusKindSchema.options;
   protected readonly bandOptions = bandSchema.options;
-  protected readonly sortOptions: { value: LinkSortKey; label: string }[] = [
-    { value: 'name', label: 'Name' },
-    { value: 'capacityMbps', label: 'Capacity' },
-    { value: 'status', label: 'Status' },
-    { value: 'throughputMbps', label: 'Throughput' },
-  ];
+  protected readonly sortOptions = linkSortKeySchema.options.map((value) => ({
+    value,
+    label: SORT_LABELS[value],
+  }));
 
   protected onStatus(event: Event): void {
     const value = (event.target as HTMLSelectElement).value;

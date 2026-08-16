@@ -259,19 +259,29 @@ export class FleetPage {
   private readonly latestSample = this.store.latestSample;
 
   /**
-   * The query string, parsed with the same schema the Server's validation
-   * pipe runs. An unparseable query — a mistyped `status`, an unknown `sort`
-   * key — is not rendered as an error: it resolves to the defaults here, and
-   * the `effect` below rewrites the URL to match.
+   * The query string, parsed once with the same schema the Server's
+   * validation pipe runs — `query` and the fallback `effect` below both read
+   * this result rather than each re-running `safeParse` on their own copy of
+   * the raw object, which would be two sources of truth for "is this query
+   * invalid" that a future edit could bring out of step.
    */
-  protected readonly query = computed<LinkListQuery>(() => {
-    const parsed = linkListQuerySchema.safeParse({
+  private readonly parsedQuery = computed(() =>
+    linkListQuerySchema.safeParse({
       status: this.status(),
       band: this.band(),
       q: this.q(),
       sort: this.sort(),
       dir: this.dir(),
-    });
+    }),
+  );
+
+  /**
+   * An unparseable query — a mistyped `status`, an unknown `sort` key — is
+   * not rendered as an error: it resolves to the defaults here, and the
+   * `effect` below rewrites the URL to match.
+   */
+  protected readonly query = computed<LinkListQuery>(() => {
+    const parsed = this.parsedQuery();
 
     return parsed.success ? parsed.data : DEFAULT_QUERY;
   });
@@ -312,6 +322,17 @@ export class FleetPage {
     return { id: worstLinkId, name: link?.name ?? worstLinkId };
   });
 
+  /**
+   * Every `router.navigate` this component issues, chained onto the last —
+   * `queryParamsHandling: 'merge'` reads `Router.currentUrlTree`, which only
+   * updates once a navigation finishes, not when `navigate()` is called. Two
+   * controls changing back to back without this chain would both merge
+   * against the same stale tree, and the second `navigate()` — the one the
+   * router keeps, since a new navigation supersedes one still in flight —
+   * would silently drop the first control's change from the URL.
+   */
+  private pendingNavigation: Promise<unknown> = Promise.resolve();
+
   constructor() {
     // An unparseable query string rewrites the URL rather than rendering an
     // error — a mistyped address is not a failure the operator took an action
@@ -319,20 +340,8 @@ export class FleetPage {
     // surfacing every failure. `replaceUrl` keeps the broken address off the
     // back stack, since it was never a state worth returning to.
     effect(() => {
-      const raw = {
-        status: this.status(),
-        band: this.band(),
-        q: this.q(),
-        sort: this.sort(),
-        dir: this.dir(),
-      };
-
-      if (!linkListQuerySchema.safeParse(raw).success) {
-        this.router.navigate([], {
-          relativeTo: this.route,
-          queryParams: {},
-          replaceUrl: true,
-        });
+      if (!this.parsedQuery().success) {
+        this.navigate({ queryParams: {}, replaceUrl: true });
       }
     });
   }
@@ -343,10 +352,16 @@ export class FleetPage {
 
   /** One control changed: merged into the query string, which is the state. */
   protected updateQuery(patch: QueryPatch): void {
-    this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: patch,
-      queryParamsHandling: 'merge',
-    });
+    this.navigate({ queryParams: patch, queryParamsHandling: 'merge' });
+  }
+
+  private navigate(extras: {
+    queryParams: QueryPatch | Record<string, never>;
+    queryParamsHandling?: 'merge';
+    replaceUrl?: boolean;
+  }): void {
+    this.pendingNavigation = this.pendingNavigation.then(() =>
+      this.router.navigate([], { relativeTo: this.route, ...extras }),
+    );
   }
 }

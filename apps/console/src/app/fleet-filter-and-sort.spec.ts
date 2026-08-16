@@ -120,11 +120,10 @@ describe('filtering and sorting the Fleet, with the URL as the state', () => {
     expect(router.url).not.toContain('band=5GHz');
 
     // Sorting by name, ascending, is the other ordering the fixtures prove:
-    // Bravo sorts last by Capacity but first-after-Alpha by name.
-    // Awaited separately: two controls changing back to back are two
-    // navigations, and the second must read the first's URL, not race it.
+    // Bravo sorts last by Capacity but first-after-Alpha by name. Both
+    // controls change back to back, with no await between them — two
+    // navigations racing, neither dropped by the other.
     view.setSort('name');
-    await fixture.whenStable();
     view.setDir('asc');
     await fixture.whenStable();
     expect(view.rowIds()).toEqual([ALPHA, BRAVO, CHARLIE]);
