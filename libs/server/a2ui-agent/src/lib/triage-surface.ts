@@ -18,28 +18,41 @@ export const REMEDIATIONS = [
   },
   {
     value: 'lower-band',
-    label: 'Move to a lower Band — shorter reach loss in rain, less capacity',
+    label:
+      'Move to a lower Band — longer reach and less rain loss, at less capacity',
   },
 ] as const;
 
 const SURFACE_ID = 'triage';
 
+/**
+ * Every Surface here is one Card on a root Surface; only its contents
+ * differ. Written once so the two cannot drift into looking like two
+ * different screens.
+ */
+function shell(
+  children: string[],
+  ...contents: A2uiCreateSurface['components']
+): A2uiCreateSurface['components'] {
+  return [
+    { id: 'root', component: 'Surface', children: ['card'] },
+    { id: 'card', component: 'Card', title: 'Triage', children },
+    ...contents,
+  ];
+}
+
 /** The Surface offered when nothing on the Fleet is worth triaging. */
 export function quietSurface(): A2uiCreateSurface {
   return {
     surfaceId: SURFACE_ID,
-    components: [
-      { id: 'root', component: 'Surface', children: ['card'] },
-      { id: 'card', component: 'Card', title: 'Triage', children: ['intro'] },
-      {
-        id: 'intro',
-        component: 'Text',
-        // Deliberately not "every Link is healthy": a Link reporting nothing
-        // at all is down for want of data, which is a different conversation
-        // from one a configuration change would help.
-        text: 'No Link is reporting readings that a configuration change would help.',
-      },
-    ],
+    components: shell(['intro'], {
+      id: 'intro',
+      component: 'Text',
+      // Deliberately not "every Link is healthy": a Link reporting nothing
+      // at all is down for want of data, which is a different conversation
+      // from one a configuration change would help.
+      text: 'No Link is reporting readings that a configuration change would help.',
+    }),
   };
 }
 
@@ -61,14 +74,8 @@ export function triageSurface(links: readonly Link[]): A2uiCreateSurface {
   return {
     surfaceId: SURFACE_ID,
     dataModel: { linkId: links[0].id, remediation: REMEDIATIONS[0].value },
-    components: [
-      { id: 'root', component: 'Surface', children: ['card'] },
-      {
-        id: 'card',
-        component: 'Card',
-        title: 'Triage',
-        children: ['intro', 'link', 'remediation', 'recommend'],
-      },
+    components: shell(
+      ['intro', 'link', 'remediation', 'recommend'],
       { id: 'intro', component: 'Text', text: introText(links) },
       {
         id: 'link',
@@ -98,6 +105,6 @@ export function triageSurface(links: readonly Link[]): A2uiCreateSurface {
           },
         },
       },
-    ],
+    ),
   };
 }

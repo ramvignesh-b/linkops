@@ -4,10 +4,10 @@ import { readPointer, writePointer } from './json-pointer';
  * The only unit tests in the assistant slice. Everything else it builds is
  * asserted through a seam — the endpoint over HTTP, and later the rendered
  * DOM. These two functions are the exception on purpose: they are the
- * prototype-pollution guard, and in this ticket no seam reaches them at all,
+ * prototype-pollution guard, and no seam reaches them yet at all,
  * because the Server authors Surfaces with literal values and only the
  * renderer resolves a binding. Shipping a security guard with no coverage
- * until a later ticket is the worse trade.
+ * until the renderer exists is the worse trade.
  */
 describe('readPointer', () => {
   it('reads the whole document for the two spellings of root', () => {

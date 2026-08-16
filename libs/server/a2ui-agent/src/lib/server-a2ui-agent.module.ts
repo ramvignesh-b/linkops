@@ -32,13 +32,13 @@ import { StubTriageAgent } from './stub-triage-agent';
   providers: [
     {
       provide: A2UI_AGENT,
-      // The seam the provider ticket selects on. Today there is one
-      // implementation and it is the one a reviewer with no credentials runs.
+      // The seam configuration selects an implementation at. Today there is
+      // one, and it is the one that runs for someone who cloned this
+      // repository and holds no credentials.
       useFactory: (repository: LinkRepository, telemetry: TelemetryPort) =>
         new StubTriageAgent(repository, telemetry, systemClock),
       inject: [LINK_REPOSITORY, TELEMETRY_PORT],
     },
   ],
-  exports: [A2UI_AGENT],
 })
 export class ServerA2uiAgentModule {}

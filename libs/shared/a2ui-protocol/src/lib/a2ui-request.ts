@@ -6,8 +6,8 @@ import { z } from 'zod';
  * ours. `kind` discriminates, so opening a conversation and acting within
  * one stay two shapes rather than one shape with everything optional.
  *
- * Today there is one member. The Action carrying an operator's choice back
- * joins it in the round-trip ticket.
+ * Today there is one member: opening a conversation. The Action carrying an
+ * operator's choice back joins it when the round-trip is built.
  */
 export const a2uiRequestSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('open') }),
