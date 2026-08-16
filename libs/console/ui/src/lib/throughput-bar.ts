@@ -10,7 +10,7 @@ import {
  * number is the misreading: 40 Mbps is healthy on a 50 Mbps Link and a fault on
  * a 1000 Mbps one.
  *
- * `null` throughput is *no reading taken*, not zero. It is what a row shows
+ * `null` throughput is *no Sample taken*, not zero. It is what a row shows
  * between first paint over REST — which carries the Roster but no Samples — and
  * the first frame off the stream, and rendering it as `0` would be inventing a
  * measurement nobody made.
@@ -22,7 +22,9 @@ import {
     <div class="track" aria-hidden="true">
       <div class="fill" [style.width.%]="fillPercent()"></div>
     </div>
-    <span class="reading">{{ reading() }} / {{ capacityMbps() }} Mbps</span>
+    <span class="throughput-value"
+      >{{ formattedThroughput() }} / {{ capacityMbps() }} Mbps</span
+    >
   `,
   styles: `
     :host {
@@ -44,7 +46,7 @@ import {
       background: var(--accent);
     }
 
-    .reading {
+    .throughput-value {
       font-family: var(--font-family-mono);
       font-size: var(--font-size-small);
       font-variant-numeric: tabular-nums;
@@ -57,7 +59,7 @@ export class ThroughputBar {
   readonly capacityMbps = input.required<number>();
 
   /** Whole Mbps: a hundredth of a megabit is precision an operator cannot use. */
-  protected readonly reading = computed(() => {
+  protected readonly formattedThroughput = computed(() => {
     const throughput = this.throughputMbps();
 
     return throughput === null ? '—' : String(Math.round(throughput));

@@ -10,7 +10,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { applyListQuery, FleetStore } from '@linkops/console/data-access';
 import {
   FleetFilterBar,
-  KpiTile,
+  SummaryFigureTile,
   StatusPill,
   ThroughputBar,
 } from '@linkops/console/ui';
@@ -59,10 +59,16 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
 @Component({
   selector: 'lib-fleet-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FleetFilterBar, KpiTile, RouterLink, StatusPill, ThroughputBar],
+  imports: [
+    FleetFilterBar,
+    SummaryFigureTile,
+    RouterLink,
+    StatusPill,
+    ThroughputBar,
+  ],
   template: `
-    <section class="kpi">
-      <div class="kpi-header">
+    <section class="summary">
+      <div class="summary-header">
         <!--
           Labelled Fleet-wide because that is what it is: these figures come
           from the Server's Summary and describe the whole Fleet, so no view
@@ -74,11 +80,17 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
 
       @if (summary(); as summary) {
         <div class="tiles">
-          <lib-kpi-tile label="Links" [value]="summary.total" />
-          <lib-kpi-tile label="Up" [value]="summary.up" />
-          <lib-kpi-tile label="Degraded" [value]="summary.degraded" />
-          <lib-kpi-tile label="Down" [value]="summary.down" />
-          <lib-kpi-tile label="Total throughput" [value]="totalThroughput()" />
+          <lib-summary-figure-tile label="Links" [value]="summary.total" />
+          <lib-summary-figure-tile label="Up" [value]="summary.up" />
+          <lib-summary-figure-tile
+            label="Degraded"
+            [value]="summary.degraded"
+          />
+          <lib-summary-figure-tile label="Down" [value]="summary.down" />
+          <lib-summary-figure-tile
+            label="Total throughput"
+            [value]="totalThroughput()"
+          />
         </div>
         <p class="worst-link">
           @if (worstLink(); as worst) {
@@ -148,11 +160,11 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
     </table>
   `,
   styles: `
-    .kpi {
+    .summary {
       margin-bottom: var(--space-4);
     }
 
-    .kpi-header {
+    .summary-header {
       display: flex;
       align-items: center;
       justify-content: space-between;

@@ -2,7 +2,7 @@ export * from './lib/connection-banner';
 export * from './lib/field-issue-lookup';
 export * from './lib/fleet-breadcrumb';
 export * from './lib/fleet-filter-bar';
-export * from './lib/kpi-tile';
+export * from './lib/summary-figure';
 export * from './lib/link-conflict';
 export * from './lib/link-form';
 export * from './lib/operator-message';

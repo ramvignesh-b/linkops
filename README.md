@@ -104,7 +104,7 @@ and `worstLinkId` is `null`.
 no filtering, no combining it with the repository happens in
 `server/links-api`. The redundancy of computing the same numbers twice, once
 on the server and once on the Console, is removed rather than arbitrated: a
-Tick applies as one atomic store write on the Console, so the KPI header can
+Tick applies as one atomic store write on the Console, so the Summary header can
 never contradict the list beneath it.
 
 **`worstLinkId` is a selection, not an aggregate.** It is the lowest `snrDb`
@@ -118,7 +118,7 @@ separately. `worstLinkId` is `null` only when no Link anywhere has reported.
 
 `pnpm start`, then <http://localhost:4200>, and an operator sees the whole
 Fleet: every Link's name, its two Sites, its Band, its Status and its
-Throughput against the Capacity it is provisioned for, under a Fleet-wide KPI
+Throughput against the Capacity it is provisioned for, under a Fleet-wide Summary
 header. The Console's half of the telemetry path is four decisions.
 
 **First paint is REST, not the stream.** `GET /api/links` and
@@ -208,8 +208,8 @@ dev-mode checks, so production should cost at most this, not more.
 | `libs/server/stream-api` | `GET /api/stream`, the Tick-to-events pipeline every connection shares, and the subscriber count that makes release observable. |
 | `apps/api` | Module registration only. |
 | `libs/console/data-access` | The Console's wire and its state: the stream client behind the `EVENT_SOURCE` token, schema validation of every frame, the Tick coalescer, and `FleetStore` — the Roster, the latest Sample per Link, the Summary and the connection state, holding all three of the first as one value so a Tick applies as one write. `TransportFailure` and `applyListQuery` — the Console's filter-and-sort over the store — live here too. |
-| `libs/console/ui` | Presentational only, domain types in and events out, no store and no router: the Status pill, the Throughput-against-Capacity bar, the KPI tile, the connection banner and the Fleet filter bar. |
-| `libs/console/feature-fleet` | The `/links` route: the Fleet list, the Fleet-wide KPI header and the filter/sort controls above it. The one component here that reads the store or the router — filter and sort parameters arrive as router-bound inputs, parsed against the query string with `linkListQuerySchema`. |
+| `libs/console/ui` | Presentational only, domain types in and events out, no store and no router: the Status pill, the Throughput-against-Capacity bar, the Summary Figure tile, the connection banner and the Fleet filter bar. |
+| `libs/console/feature-fleet` | The `/links` route: the Fleet list, the Fleet-wide Summary header and the filter/sort controls above it. The one component here that reads the store or the router — filter and sort parameters arrive as router-bound inputs, parsed against the query string with `linkListQuerySchema`. |
 | `libs/console/feature-link-detail`, `libs/console/feature-assistant` | Empty, and named ahead of the slices that fill them. |
 | `apps/console` | The shell, the routes, the providers — including the real `EventSource` factory — and the integration tests that drive the routed Console with only the browser's two network primitives faked. |
 
@@ -443,7 +443,7 @@ existence is a Roster question, not a telemetry one.
 
 ### `GET /api/fleet/summary`
 
-Returns the Fleet Summary — the counts and totals a KPI header renders,
+Returns the Fleet Summary — the counts and totals a Summary header renders,
 computed once by `server/telemetry` and never recomputed by a client.
 
 ```json

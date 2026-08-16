@@ -56,9 +56,7 @@ import { isNotFoundError } from './is-not-found';
         <div class="not-found">
           <h2>Link Not Found</h2>
           <p>This Link does not exist or may have been deleted.</p>
-          <a routerLink="/links" class="return-link"
-            >Return to Fleet overview</a
-          >
+          <a routerLink="/links" class="return-link">Return to Fleet</a>
         </div>
       } @else if (unreachable()) {
         <div class="unreachable">
@@ -67,9 +65,7 @@ import { isNotFoundError } from './is-not-found';
             The Server did not answer, so whether this Link still exists is
             unknown.
           </p>
-          <a routerLink="/links" class="return-link"
-            >Return to Fleet overview</a
-          >
+          <a routerLink="/links" class="return-link">Return to Fleet</a>
         </div>
       } @else if (currentLink(); as link) {
         <header class="detail-header">

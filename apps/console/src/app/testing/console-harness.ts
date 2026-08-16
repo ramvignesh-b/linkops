@@ -293,16 +293,8 @@ function linkEditAndDeleteScreen(root: HTMLElement) {
   };
 }
 
-/**
- * DOM queries and control interactions, shared across every app-level test.
- *
- * Its helpers sit outside it rather than closing over `root`, which is what
- * keeps the returned object — one entry per thing a test asks the screen —
- * inside the lint budget as surfaces are added.
- */
-export function screen(fixture: ComponentFixture<App>) {
-  const root = fixture.nativeElement as HTMLElement;
-
+/** The Fleet list route's queries — grouped out of `screen` to keep it inside the lint budget. */
+function fleetListScreen(root: HTMLElement) {
   /** Sets a control's value and dispatches the `change` the component listens for. */
   const setControl = (name: string, value: string): void => {
     const element = control(root, name);
@@ -324,12 +316,17 @@ export function screen(fixture: ComponentFixture<App>) {
       text(row(root, id).querySelector('lib-throughput-bar')),
     cell: (id: Link['id'], name: string) =>
       text(row(root, id).querySelector(`.cell-${name}`)),
-    kpi: (label: string) => {
-      const tile = [...root.querySelectorAll('lib-kpi-tile')].find(
-        (candidate) => text(candidate.querySelector('.kpi-label')) === label,
+    summary: (label: string) => {
+      const tile = [...root.querySelectorAll('lib-summary-figure-tile')].find(
+        (candidate) =>
+          text(candidate.querySelector('.summary-label')) === label,
       );
-
-      return text(tile?.querySelector('.kpi-value') ?? null);
+      return text(tile?.querySelector('.summary-value') ?? null);
+    },
+    filter: (band: string) => {
+      const el = root.querySelector(`input[value="${band}"]`);
+      if (!el) throw new Error(`No filter checkbox found for ${band}`);
+      return el as HTMLInputElement;
     },
     worstLinkHref: () =>
       root.querySelector('.worst-link a')?.getAttribute('href') ?? null,
@@ -337,13 +334,31 @@ export function screen(fixture: ComponentFixture<App>) {
       root.querySelector<HTMLElement>('.new-link-action')?.click();
     },
     banner: () => root.querySelector<HTMLElement>('lib-connection-banner p'),
-    heading: () => text(root.querySelector('.kpi h2')),
+    heading: () => text(root.querySelector('.summary h2')),
+    add: () =>
+      (
+        root.querySelector('.summary-header a.primary-button') as HTMLElement
+      )?.click(),
     setStatus: (value: string) => setControl('status', value),
     setBand: (value: string) => setControl('band', value),
     setQuery: (value: string) => setControl('q', value),
     setSort: (value: string) => setControl('sort', value),
     setDir: (value: string) => setControl('dir', value),
+  };
+}
 
+/**
+ * DOM queries and control interactions, shared across every app-level test.
+ *
+ * Its helpers sit outside it rather than closing over `root`, which is what
+ * keeps the returned object — one entry per thing a test asks the screen —
+ * inside the lint budget as surfaces are added.
+ */
+export function screen(fixture: ComponentFixture<App>) {
+  const root = fixture.nativeElement as HTMLElement;
+
+  return {
+    ...fleetListScreen(root),
     ...linkDetailScreen(root),
     ...linkCreateScreen(root),
     ...linkConflictScreen(root),

@@ -44,7 +44,7 @@ function hasUserTimingApi(): boolean {
 /**
  * What the Console knows about its own connection to the Server. `lastFrameAt`
  * is a Server timestamp taken off the frame itself — the Console never reads
- * its own clock, which is what keeps clock skew out of the freeze banner.
+ * its own clock, which is what keeps clock skew out of the stall banner.
  */
 export type ConnectionState =
   | { kind: 'connecting' }
@@ -58,7 +58,7 @@ export type ConnectionState =
  * Two things it deliberately does not do. It does not derive Status — the
  * Server's `status` is rendered unchanged, so a gap in the stream can never
  * make the Console a second, disagreeing producer of health. And it does not
- * aggregate the Summary — the Server's is rendered verbatim, so the KPI header
+ * aggregate the Summary — the Server's is rendered verbatim, so the Summary header
  * cannot contradict the rows beneath it.
  */
 @Injectable({ providedIn: 'root' })
@@ -165,7 +165,7 @@ export class FleetStore {
         return;
 
       case 'failure':
-        // Freeze. Nothing on screen is cleared, no Status is recomputed, and no
+        // Stall. Nothing on screen is cleared, no Status is recomputed, and no
         // Link flips to `down` — an operator has to be able to tell *the Fleet
         // died* from *my connection died*, and a Console that kept deriving
         // would make those two situations look identical.
