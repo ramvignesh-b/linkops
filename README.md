@@ -206,11 +206,14 @@ dev-mode checks, so production should cost at most this, not more.
 | `libs/server/telemetry` | The Simulator — one fleet-wide interval, never a timer per Link — the Sample store behind it, `TelemetryPort` as the read side, and `TelemetryBus`, which publishes one Tick to whoever is subscribed. |
 | `libs/server/links-api` | The HTTP surface — `GET /api/links`, `GET /api/links/:id`, `POST /api/links`, `PATCH /api/links/:id`, `DELETE /api/links/:id`, `GET /api/links/:id/telemetry`, `GET /api/fleet/summary` — the DTOs `createZodDto` generates from the shared schemas, the globally registered `nestjs-zod` validation pipe, and the one exception filter mapping domain errors onto the error envelope. |
 | `libs/server/stream-api` | `GET /api/stream`, the Tick-to-events pipeline every connection shares, and the subscriber count that makes release observable. |
+| `libs/shared/a2ui-protocol` | The Assistant's wire contract: the A2UI envelope, the flat component list, the whitelisted component names, the depth and count caps as constants, and the guarded JSON-Pointer read and write. Framework-free, one runtime dependency: zod. |
+| `libs/server/a2ui-agent` | `POST /api/agent/ui` and the agent behind it — a one-method interface, and the deterministic stub that implements it by reading the Roster and Telemetry through the providers every other feature shares. |
 | `apps/api` | Module registration only. |
 | `libs/console/data-access` | The Console's wire and its state: the stream client behind the `EVENT_SOURCE` token, schema validation of every frame, the Tick coalescer, and `FleetStore` — the Roster, the latest Sample per Link, the Summary and the connection state, holding all three of the first as one value so a Tick applies as one write. `TransportFailure` and `applyListQuery` — the Console's filter-and-sort over the store — live here too. |
 | `libs/console/ui` | Presentational only, domain types in and events out, no store and no router: the Status pill, the Throughput-against-Capacity bar, the Summary Figure tile, the connection banner and the Fleet filter bar. |
 | `libs/console/feature-fleet` | The `/links` route: the Fleet list, the Fleet-wide Summary header and the filter/sort controls above it. The one component here that reads the store or the router — filter and sort parameters arrive as router-bound inputs, parsed against the query string with `linkListQuerySchema`. |
-| `libs/console/feature-link-detail`, `libs/console/feature-assistant` | Empty, and named ahead of the slices that fill them. |
+| `libs/console/feature-link-detail` | The `/links/:id` and `/links/:id/edit` routes: one Link's configuration and readings, the Throughput sparkline over its recent history, both modes of the Link form, the version-conflict resolution and the delete. |
+| `libs/console/feature-assistant` | Empty, and named ahead of the slice that fills it. |
 | `apps/console` | The shell, the routes, the providers — including the real `EventSource` factory — and the integration tests that drive the routed Console with only the browser's two network primitives faked. |
 
 ## API reference
@@ -552,6 +555,95 @@ Disconnecting releases the subscription immediately; the per-Tick work is done
 once and shared, so a second operator opening the Console costs one
 subscription and no extra work per Tick. Stopping the API ends every open
 response cleanly rather than severing it mid-frame — `curl -N` exits `0`.
+
+### `POST /api/agent/ui`
+
+The Assistant. It reads the Fleet as it stands and answers with an **A2UI
+Surface** — a document describing what should appear on screen, rendered by
+components the Console owns rather than by markup the Server sent.
+
+```json
+{ "kind": "open" }
+```
+
+```json
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "triage",
+    "dataModel": { "linkId": "lnk_0003", "remediation": "narrow-channel" },
+    "components": [
+      { "id": "root", "component": "Surface", "children": ["card"] },
+      { "id": "card", "component": "Card", "title": "Triage", "children": ["intro", "link", "remediation", "recommend"] },
+      { "id": "intro", "component": "Text", "text": "2 Links are reporting readings that need attention. Pick one, and a remediation to consider." },
+      { "id": "link", "component": "Select", "label": "Link", "value": { "path": "/linkId" }, "options": [{ "value": "lnk_0003", "label": "Warehouse to Yard" }] }
+    ]
+  }
+}
+```
+
+**The Assistant recommends and never writes.** No Surface it can author
+changes a Link — the operator applies a Remediation through the Link form,
+which validates against the same schemas and carries the version check. A
+payload arriving from outside must not reach the configuration of a live
+radio link, and the simplest way to guarantee that is to give it no path
+there at all.
+
+**Which Links it offers** comes from `withDerivedStatus`, the presenter the
+REST reads and the stream diff already share, so the Assistant cannot
+disagree with the Fleet list about what `degraded` means — no threshold
+appears in its library. It offers Links whose readings are poor: `degraded`,
+or `down` because of metrics. A Link that is `down` for want of data is left
+out, because every Remediation offered is a configuration change judged
+against readings, and a Link that has reported nothing has none to judge.
+When no Link qualifies, the Surface says so rather than carrying an empty
+picker.
+
+**The agent behind it is a deterministic stub** — a pure function of its
+request and the Roster, with no clock of its own, no randomness, no network
+and no key, so the same Fleet answers the same Surface twice. It sits behind
+a one-method interface and an injection token, which is the seam a model
+client would be swapped in at.
+
+A body that is not an Assistant request returns `400` `VALIDATION_FAILED`
+through the same pipe and envelope as every other endpoint.
+
+#### A2UI conformance
+
+Built against the [A2UI v1.0 candidate specification](https://a2ui.org/specification/v1.0-a2ui/),
+implemented here rather than taken from `@a2ui/angular` — which cannot be
+installed against this Angular version, and which would be a third-party
+dependency holding a security boundary. See
+[ADR-0007](./docs/adr/0007-own-a2ui-renderer.md).
+
+| Part of the specification | Here |
+|---|---|
+| `createSurface` | Implemented |
+| `updateDataModel` | Implemented — its `path`, `value` shape is also how a control's own write is expressed, so there is one guarded write path rather than two |
+| `updateComponents` | **Not implemented.** An in-place component patch needs an identity-stable merge nothing in this design exercises, and an unexercised merge path is an untested one |
+| `deleteSurface` | **Not implemented.** One Surface at a time, replaced by the next |
+| `callRendererFunction`, `agentFunctionResponse` | **Not implemented.** Bidirectional function calls are v1.0's largest addition and nothing here needs one |
+| Component types | Six, and ours: `Surface`, `Card`, `Text`, `Button`, `Select`, `Metric`. A name outside that list is still a valid document — the whitelist lives in the renderer's registry, not in the schema, so an unknown type can degrade to a labelled fallback instead of rejecting the Surface around it |
+| Static properties, and `{ "path": "/..." }` data bindings | Implemented, resolved through the guarded pointer functions |
+| `{ "call": ... }` function-call properties, `checks` validation rules | **Not implemented** |
+| Template iteration — `"children": { "path": ..., "componentId": ... }` | **Not implemented.** Children are an id list |
+| Markdown in `Text` | **Not implemented, deliberately.** Rendering it safely needs a sanitizer, and a sanitizer is a new attack surface to reason about |
+
+Two points the specification leaves open, settled here and written down
+rather than assumed:
+
+- **The root component is the first in the list.** A2UI leaves the root
+  implicit.
+- **`/` addresses the whole Data Model**, following `updateDataModel`'s own
+  default, where RFC 6901 would read it as the key `""`. Relative pointers
+  are refused outright, since they only mean anything inside a template's
+  collection scope and template iteration is not implemented.
+
+**The prototype-pollution guard is in the pointer functions themselves**, and
+refuses `__proto__`, `constructor` and `prototype` on reads as well as
+writes: a read through `constructor` is how a payload gets hold of the
+prototype in the first place, so guarding only writes would leave the door
+open and look shut.
 
 ### Errors
 
