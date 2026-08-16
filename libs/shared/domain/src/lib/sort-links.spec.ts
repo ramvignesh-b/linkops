@@ -1,4 +1,4 @@
-import type { Link } from '@linkops/shared/domain';
+import type { Link } from './link';
 import { sortLinks, type SortableLink } from './sort-links';
 
 function entry(overrides: {
