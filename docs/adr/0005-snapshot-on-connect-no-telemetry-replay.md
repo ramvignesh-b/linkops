@@ -28,6 +28,28 @@ Native `EventSource` reconnect, with monotonic event ids and a fixed **`retry: 3
 
 Hand-rolled exponential backoff is the correct answer for a stream crossing the open internet and the wrong answer for one served next to the device it reports on: it replaces a browser primitive with code that then has to be tested, to solve a thundering-herd problem a single-operator console does not have. Three seconds is fast enough that restarting the API looks instantaneous, and slow enough that a thirty-second outage is ten requests. Note that a *clean* stream close still triggers reconnect — the `EventSource` spec only stops on HTTP 204 or a non-2xx — so this hint governs shutdown behaviour too, not just crashes.
 
+## Amendment, 2026-08-16: the Console reopens what the browser abandons
+
+The note above records that `EventSource` stops on a non-2xx without drawing its
+consequence, and building the fleet view found it: killing the API answers the
+open stream request with a 500 from the dev server's proxy — a 502 from anything
+sitting in front of the API does the same — and the browser then closes that
+`EventSource` permanently. The screen froze correctly and never recovered.
+Restarting the API read as a fleet-wide outage until the operator reloaded the
+page, which is the opposite of what "three seconds is fast enough that restarting
+the API looks instantaneous" promised.
+
+So the Console reopens the stream itself in exactly one case: the `error` where
+`readyState` is `CLOSED`, meaning the browser has given up rather than gone quiet
+for three seconds. It reopens at the same 3000 ms the server publishes, so there
+is one cadence and not two, and a reopen pending when the application is
+destroyed is cancelled with the connection it would have replaced.
+
+This does not reintroduce the backoff this ADR refused. There is no growing
+delay, no jitter and no attempt ceiling — the browser still owns reconnect
+wherever it is willing to do it, and the Console covers only the case where it
+provably will not.
+
 ## Consequences
 
 - On reconnect the detail view's sparkline has a visible gap for the disconnected interval. That is honest and intended; the alternative is inventing data.

@@ -95,6 +95,75 @@ excluded entirely — a Link with no reading is not the worst Link in the
 fleet, it is an unknown one, and `status: down, reason: stale` already says so
 separately. `worstLinkId` is `null` only when no Link anywhere has reported.
 
+### What the Console does with a Tick
+
+`pnpm start`, then <http://localhost:4200>, and an operator sees the whole
+Fleet: every Link's name, its two Sites, its Band, its Status and its
+Throughput against the Capacity it is provisioned for, under a Fleet-wide KPI
+header. The Console's half of the telemetry path is four decisions.
+
+**First paint is REST, not the stream.** `GET /api/links` and
+`GET /api/fleet/summary` are issued together on boot and applied as one write,
+because [ADR-0005](docs/adr/0005-snapshot-on-connect-no-telemetry-replay.md)
+makes the Snapshot the resync path rather than the load path: an operator whose
+`EventSource` is blocked should still see their Fleet. The Roster is loaded with
+**no query parameters** — the Console holds all of it and filters locally, since
+the stream delivers the whole Fleet and the Server cannot tell a filtered client
+that something has just entered its filter. Throughput reads `—` rather than `0`
+until the first frame lands, because `GET /api/links` carries the Roster and no
+Samples, and zero is a reading nobody has taken.
+
+**The stream then takes over.** `fleet.snapshot` replaces Roster, Samples and
+Summary wholesale on every connection, including the first. Every frame is
+validated against the same `streamEventSchema` the Server publishes from — this
+is [ADR-0006](docs/adr/0006-shared-zod-schema-as-the-contract.md)'s client half,
+and the schema's own listener list is what the Console subscribes with, so an
+event added to the catalogue is one it already listens for. A frame that fails
+validation is dropped and logged rather than rendered: one malformed frame
+should not blank an operator's console, and no operator action is owed a message
+because no operator took one.
+
+**One Tick is one store write.** The Console buffers a Tick's events and applies
+them together when `fleet.summary` lands, which the documented within-Tick
+ordering guarantees is last. That is the mirror image of
+[ADR-0004](docs/adr/0004-batched-per-tick-sse-framing.md): collapsing N Links
+into one frame on the wire buys nothing if the receiver un-batches it into four
+state changes and four change-detection passes. The header and the rows beneath
+it are therefore always from the same Tick. A Tick that somehow carried no
+`fleet.summary` is neither applied nor discarded — it stays buffered and the
+next Tick's Summary flushes both, so the degradation is a doubled batch rather
+than a frozen screen.
+
+**When the stream drops, the Console freezes.** Every row keeps its last known
+reading, a banner names the time of the last good frame, and **no Link flips to
+`down`**. That is the whole point: an operator has to be able to tell *the Fleet
+died* from *my connection died*, and a Console that kept deriving Status would
+make those two situations look identical — the **Stall** that
+[`CONTEXT.md`](./CONTEXT.md) calls worse than a disconnect. The time in the
+banner is the Server's own frame timestamp, never the browser's clock, so clock
+skew is not a category of bug here. Recovery needs nothing from the operator: the
+browser reconnects on the `retry: 3000` it was given, the Console reopens the
+stream itself in the one case where the browser gives up instead — a reply the
+Server never wrote, such as the 500 or 502 that arrives while the API restarts —
+and the next
+`fleet.snapshot` replaces the frozen state in one event. A dropped stream is a
+**Transport Failure** — its own type, never a synthesised Error Envelope, because
+the Server did not answer rather than answering "no".
+
+The Console derives nothing. `status` is rendered exactly as the Server
+computed it and the Fleet Summary is rendered verbatim, so there is no second
+producer of either to disagree with the first. `EventSource` reaches the Console
+through an injection token returning a narrow structural type rather than off
+the global — jsdom does not implement `EventSource` at all, so that token is
+what makes the whole path testable in the environment the Console's tests run
+in.
+
+Visually there is one theme, a fixed desktop layout, and roughly forty lines of
+design tokens in `apps/console/src/styles.css` that every component references
+instead of a literal colour or spacing. Status has **three** colours, not four:
+a `down` Link's reason — *no telemetry* versus *poor signal* — is a label,
+because it answers *why*, not *how bad*.
+
 ### Where things live
 
 | Library | Owns |
@@ -105,6 +174,11 @@ separately. `worstLinkId` is `null` only when no Link anywhere has reported.
 | `libs/server/links-api` | The HTTP surface — `GET /api/links`, `GET /api/links/:id`, `POST /api/links`, `PATCH /api/links/:id`, `DELETE /api/links/:id`, `GET /api/links/:id/telemetry`, `GET /api/fleet/summary` — the DTOs `createZodDto` generates from the shared schemas, the globally registered `nestjs-zod` validation pipe, and the one exception filter mapping domain errors onto the error envelope. |
 | `libs/server/stream-api` | `GET /api/stream`, the Tick-to-events pipeline every connection shares, and the subscriber count that makes release observable. |
 | `apps/api` | Module registration only. |
+| `libs/console/data-access` | The Console's wire and its state: the stream client behind the `EVENT_SOURCE` token, schema validation of every frame, the Tick coalescer, and `FleetStore` — the Roster, the latest Sample per Link, the Summary and the connection state, holding all three of the first as one value so a Tick applies as one write. `TransportFailure` lives here too. |
+| `libs/console/ui` | Presentational only, domain types in and events out, no store and no router: the Status pill, the Throughput-against-Capacity bar, the KPI tile and the connection banner. |
+| `libs/console/feature-fleet` | The `/links` route: the Fleet list and the Fleet-wide KPI header. The one component here that reads the store. |
+| `libs/console/feature-link-detail`, `libs/console/feature-assistant` | Empty, and named ahead of the slices that fill them. |
+| `apps/console` | The shell, the routes, the providers — including the real `EventSource` factory — and the integration tests that drive the routed Console with only the browser's two network primitives faked. |
 
 ## API reference
 
@@ -424,8 +498,14 @@ client can tell what arrived together. **`Last-Event-ID` is ignored**: this
 server never replays. A reconnecting client resynchronises from the
 `fleet.snapshot` it receives on connect — current state, never a recording of
 what it missed — and that first message carries `retry: 3000`, which is the
-only reconnect policy either side needs
-([ADR-0005](docs/adr/0005-snapshot-on-connect-no-telemetry-replay.md)).
+reconnect cadence for both sides
+([ADR-0005](docs/adr/0005-snapshot-on-connect-no-telemetry-replay.md)). The
+browser honours that hint on its own, with one exception a client has to handle:
+an `EventSource` whose request is answered by something other than a
+`200 text/event-stream` — the 500 or 502 whatever sits in front of the API
+returns while the API restarts — is closed permanently rather than retried, so a
+client must reopen it. The Console does, at the same 3000 ms; see that ADR's
+amendment.
 
 An idle connection receives a comment line, `: hb`, every 15 seconds, from one
 fleet-wide timer rather than one per connection. It keeps traffic flowing
@@ -488,3 +568,8 @@ pnpm lint      # nx run-many -t lint
 pnpm build     # nx run-many -t build
 pnpm start     # serves both apps/api and apps/console
 ```
+
+The Console is then at <http://localhost:4200> and the API at
+<http://localhost:3000>; the dev server proxies `/api` to it, so the Console
+calls the same relative paths in development that it would served next to the
+API.

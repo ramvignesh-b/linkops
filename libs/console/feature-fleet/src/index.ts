@@ -1,1 +1,1 @@
-export * from './lib/console-feature-fleet/console-feature-fleet';
+export * from './lib/fleet.routes';
