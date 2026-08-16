@@ -62,12 +62,15 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
   imports: [FleetFilterBar, KpiTile, RouterLink, StatusPill, ThroughputBar],
   template: `
     <section class="kpi">
-      <!--
-        Labelled Fleet-wide because that is what it is: these figures come from
-        the Server's Summary and describe the whole Fleet, so no view of the
-        list can hide a down Link from the counts above it.
-      -->
-      <h2>Fleet-wide</h2>
+      <div class="kpi-header">
+        <!--
+          Labelled Fleet-wide because that is what it is: these figures come
+          from the Server's Summary and describe the whole Fleet, so no view
+          of the list can hide a down Link from the counts above it.
+        -->
+        <h2>Fleet-wide</h2>
+        <a routerLink="/links/new" class="new-link-action">+ New link</a>
+      </div>
 
       @if (summary(); as summary) {
         <div class="tiles">
@@ -149,11 +152,29 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
       margin-bottom: var(--space-4);
     }
 
+    .kpi-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      margin-bottom: var(--space-2);
+    }
+
     h2 {
-      margin: 0 0 var(--space-2);
+      margin: 0;
       font-family: var(--font-family-heading);
       font-size: var(--font-size-heading);
       font-weight: var(--font-weight-strong);
+    }
+
+    .new-link-action {
+      color: var(--accent);
+      font-weight: var(--font-weight-medium);
+      text-decoration: none;
+    }
+
+    .new-link-action:hover {
+      text-decoration: underline;
     }
 
     .tiles {
