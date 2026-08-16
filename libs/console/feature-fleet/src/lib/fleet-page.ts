@@ -59,18 +59,24 @@ import type { LinkId } from '@linkops/shared/domain';
           <th scope="col">Link</th>
           <th scope="col">Sites</th>
           <th scope="col">Band</th>
-          <th scope="col">Status</th>
-          <th scope="col">Throughput</th>
+          <th scope="col" class="col-status">Status</th>
+          <th scope="col" class="col-throughput">Throughput</th>
         </tr>
       </thead>
       <tbody>
         @for (link of links(); track link.id) {
           <tr [attr.data-link-id]="link.id">
             <td class="cell-name">{{ link.name }}</td>
-            <td class="cell-sites">{{ link.siteA }} → {{ link.siteB }}</td>
+            <td class="cell-sites">
+              <span class="site-from">{{ link.siteA }}</span>
+              <span class="site-arrow" aria-hidden="true"> → </span>
+              <span class="site-to">{{ link.siteB }}</span>
+            </td>
             <td class="cell-band">{{ link.band }}</td>
-            <td><lib-status-pill [status]="link.status" /></td>
-            <td>
+            <td class="cell-status">
+              <lib-status-pill [status]="link.status" />
+            </td>
+            <td class="cell-throughput">
               <lib-throughput-bar
                 [throughputMbps]="throughputOf(link.id)"
                 [capacityMbps]="link.capacityMbps"
@@ -92,6 +98,7 @@ import type { LinkId } from '@linkops/shared/domain';
 
     h2 {
       margin: 0 0 var(--space-2);
+      font-family: var(--font-family-heading);
       font-size: var(--font-size-heading);
       font-weight: var(--font-weight-strong);
     }
@@ -110,6 +117,7 @@ import type { LinkId } from '@linkops/shared/domain';
 
     a {
       color: var(--accent);
+      font-weight: var(--font-weight-medium);
     }
 
     table {
@@ -123,6 +131,7 @@ import type { LinkId } from '@linkops/shared/domain';
     th {
       text-align: left;
       color: var(--text-muted);
+      font-family: var(--font-family-heading);
       font-size: var(--font-size-small);
       font-weight: var(--font-weight-strong);
     }
@@ -141,8 +150,40 @@ import type { LinkId } from '@linkops/shared/domain';
       font-weight: var(--font-weight-strong);
     }
 
-    .cell-sites,
-    .cell-band,
+    .cell-sites {
+      white-space: nowrap;
+    }
+
+    .site-from,
+    .site-to {
+      color: var(--text-primary);
+      font-weight: var(--font-weight-medium);
+    }
+
+    .site-arrow {
+      margin: 0 var(--space-1);
+      color: var(--text-muted);
+      font-size: var(--font-size-small);
+      user-select: none;
+    }
+
+    .cell-band {
+      font-family: var(--font-family-mono);
+      font-size: var(--font-size-small);
+      color: var(--text-muted);
+    }
+
+    .col-status,
+    .cell-status {
+      min-width: 180px;
+      width: 180px;
+    }
+
+    .col-throughput,
+    .cell-throughput {
+      min-width: 220px;
+    }
+
     .empty {
       color: var(--text-muted);
     }

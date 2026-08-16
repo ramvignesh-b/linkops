@@ -37,10 +37,15 @@
   --space-4: 32px;
 
   /* Type */
+  --font-family-body:
+    'Lexend', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-family-mono: 'Space Mono', monospace;
+  --font-family-heading: 'Space Mono', monospace;
   --font-size-small: 12px;
   --font-size-body: 14px;
   --font-size-heading: 20px;
   --font-weight-normal: 400;
+  --font-weight-medium: 500;
   --font-weight-strong: 600;
 
   /* Shape */
@@ -52,13 +57,18 @@ body {
   margin: 0;
   background: var(--surface-page);
   color: var(--text-primary);
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
+  font-family: var(--font-family-body);
   font-size: var(--font-size-body);
   font-weight: var(--font-weight-normal);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-family-heading);
 }
 
 :focus-visible {

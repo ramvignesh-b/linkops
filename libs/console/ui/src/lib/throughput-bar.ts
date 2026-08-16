@@ -45,6 +45,8 @@ import {
     }
 
     .reading {
+      font-family: var(--font-family-mono);
+      font-size: var(--font-size-small);
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
