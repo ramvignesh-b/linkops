@@ -1,6 +1,9 @@
 import { inject, Injectable, signal } from '@angular/core';
 import type { Subscription } from 'rxjs';
-import type { A2uiCreateSurface } from '@linkops/shared/a2ui-protocol';
+import type {
+  A2uiActionRequest,
+  A2uiCreateSurface,
+} from '@linkops/shared/a2ui-protocol';
 import {
   AssistantClient,
   AssistantInvalidPayloadError,
@@ -44,6 +47,26 @@ export class AssistantSession {
     this.surface.set(null);
 
     this.inFlight = this.client.open().subscribe({
+      next: (surface) => {
+        this.pending.set(false);
+        this.surface.set(surface);
+      },
+      error: (cause: unknown) => {
+        this.pending.set(false);
+        this.failure.set(failureFrom(cause));
+      },
+    });
+  }
+
+  /** Sends an Action to the Assistant. Cancels any reply still in flight. */
+  act(request: A2uiActionRequest): void {
+    this.inFlight?.unsubscribe();
+
+    this.pending.set(true);
+    this.failure.set(null);
+    this.surface.set(null);
+
+    this.inFlight = this.client.act(request).subscribe({
       next: (surface) => {
         this.pending.set(false);
         this.surface.set(surface);

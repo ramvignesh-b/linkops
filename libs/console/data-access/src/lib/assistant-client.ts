@@ -3,6 +3,7 @@ import { inject, Injectable } from '@angular/core';
 import { map, type Observable } from 'rxjs';
 import {
   a2uiEnvelopeSchema,
+  type A2uiActionRequest,
   type A2uiCreateSurface,
   type A2uiRequest,
 } from '@linkops/shared/a2ui-protocol';
@@ -35,6 +36,13 @@ export class AssistantClient {
   open(): Observable<A2uiCreateSurface> {
     const request: A2uiRequest = { kind: 'open' };
 
+    return this.http
+      .post<unknown>(ASSISTANT_PATH, request)
+      .pipe(map(parseSurface));
+  }
+
+  /** Sends an Action to the Assistant. */
+  act(request: A2uiActionRequest): Observable<A2uiCreateSurface> {
     return this.http
       .post<unknown>(ASSISTANT_PATH, request)
       .pipe(map(parseSurface));

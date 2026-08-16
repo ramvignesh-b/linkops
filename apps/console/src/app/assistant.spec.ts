@@ -440,4 +440,104 @@ describe('the triage panel', () => {
 
     finish();
   });
+
+  it('round-trips a remediation: the operator picks, presses the button, and the confirmation replaces the offer', async () => {
+    const { fixture, http } = await bootConsole();
+    answerFirstPaint(http, [alpha, bravo], summary());
+    await fixture.whenStable();
+
+    const view = screen(fixture);
+
+    // Open the panel and flush the triage offer.
+    view.askAssistant();
+    await fixture.whenStable();
+
+    http.expectOne('/api/agent/ui').flush(triageEnvelope());
+    await fixture.whenStable();
+
+    // The offer is rendered: verify the initial state.
+    expect(view.assistantCardTitle()).toBe('Triage');
+    expect(view.assistantButtonLabel()).toBe('Show the recommendation');
+
+    // The operator picks a different remediation.
+    view.setAssistantSelect('remediation', 'raise-tx-power');
+    await fixture.whenStable();
+
+    // Press the button — this sends the Action back to the Assistant.
+    (fixture.nativeElement as HTMLElement)
+      .querySelector<HTMLElement>('.a2ui-button')
+      ?.click();
+    await fixture.whenStable();
+
+    // The Action request carries the surface id, the component id, the event
+    // name and the current Data Model — the operator's choices, not the
+    // Button's raw context bindings.
+    const actionRequest = http.expectOne('/api/agent/ui');
+    expect(actionRequest.request.method).toBe('POST');
+    expect(actionRequest.request.body).toEqual({
+      kind: 'act',
+      surfaceId: 'triage',
+      componentId: 'recommend',
+      event: 'recommend',
+      data: { linkId: 'lnk_bravo', remediation: 'raise-tx-power' },
+    });
+
+    // The Server answers with the confirmation Surface — naming the Link and
+    // the Remediation chosen, with both Metrics.
+    actionRequest.flush({
+      version: 'v1.0',
+      createSurface: {
+        surfaceId: 'triage',
+        components: [
+          { id: 'root', component: 'Surface', children: ['card'] },
+          {
+            id: 'card',
+            component: 'Card',
+            title: 'Triage',
+            children: ['intro', 'snr', 'throughput'],
+          },
+          {
+            id: 'intro',
+            component: 'Text',
+            text: 'Bravo Pass: Raise Tx Power — more margin, within the licensed limit',
+          },
+          { id: 'snr', component: 'Metric', label: 'SNR', value: '12 dB' },
+          {
+            id: 'throughput',
+            component: 'Metric',
+            label: 'Throughput',
+            value: '30 / 100 Mbps',
+          },
+        ],
+      },
+    });
+    await fixture.whenStable();
+
+    // The confirmation Surface replaces the offer.
+    expect(view.assistantCardTitle()).toBe('Triage');
+    expect(view.assistantTexts()).toEqual([
+      'Bravo Pass: Raise Tx Power — more margin, within the licensed limit',
+    ]);
+
+    // Both Metrics are rendered.
+    const metricLabels = [
+      ...(fixture.nativeElement as HTMLElement).querySelectorAll(
+        '.a2ui-metric-label',
+      ),
+    ].map((el) => (el.textContent ?? '').trim());
+    const metricValues = [
+      ...(fixture.nativeElement as HTMLElement).querySelectorAll(
+        '.a2ui-metric-value',
+      ),
+    ].map((el) => (el.textContent ?? '').trim());
+    expect(metricLabels).toEqual(['SNR', 'Throughput']);
+    expect(metricValues).toEqual(['12 dB', '30 / 100 Mbps']);
+
+    // The Button is gone — the confirmation has no operator-editable controls.
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('.a2ui-button'),
+    ).toBeNull();
+
+    finish();
+  });
 });

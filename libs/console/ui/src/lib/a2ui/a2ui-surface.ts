@@ -8,10 +8,11 @@ import {
 } from '@angular/core';
 import {
   writePointer,
-  type A2uiAction,
+  type A2uiActionRequest,
   type A2uiCreateSurface,
 } from '@linkops/shared/a2ui-protocol';
 import { A2uiNode } from './a2ui-node';
+import type { A2uiInternalAction } from './a2ui-button';
 import { buildA2uiTree } from './render-tree';
 
 /**
@@ -36,13 +37,13 @@ import { buildA2uiTree } from './render-tree';
       [node]="tree()"
       [dataModel]="dataModel()"
       (write)="onWrite($event)"
-      (action)="action.emit($event)"
+      (action)="onAction($event)"
     />
   `,
 })
 export class A2uiSurface {
   readonly surface = input.required<A2uiCreateSurface>();
-  readonly action = output<A2uiAction>();
+  readonly action = output<A2uiActionRequest>();
 
   /**
    * The Data Model, as this render owns it: seeded from the Surface and
@@ -68,5 +69,15 @@ export class A2uiSurface {
     this.dataModel.update((current) =>
       writePointer(current, write.path, write.value),
     );
+  }
+
+  protected onAction(internalAction: A2uiInternalAction): void {
+    this.action.emit({
+      kind: 'act',
+      surfaceId: this.surface().surfaceId,
+      componentId: internalAction.componentId,
+      event: internalAction.event.name,
+      data: this.dataModel(),
+    });
   }
 }

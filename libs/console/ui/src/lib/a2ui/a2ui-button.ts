@@ -10,10 +10,20 @@ import { asText } from './a2ui-binding';
 import type { A2uiOkNode } from './render-tree';
 
 /**
+ * An action as it bubbles inside the renderer: the raw `A2uiAction` plus the
+ * `componentId` of the Button that raised it. `A2uiSurface` reads the id to
+ * build the full request shape the endpoint expects; no component below it
+ * needs the id, so it travels up rather than being threaded down.
+ */
+export interface A2uiInternalAction extends A2uiAction {
+  componentId: string;
+}
+
+/**
  * `Button`'s own renderer: a label, and the one Action a Surface can raise.
- * `action` is emitted exactly as the Surface wrote it — a Button's own
- * `context` bindings are resolved by whoever sends the Action onward, not by
- * this renderer, which injects nothing and knows nothing about a round trip.
+ * `action` is emitted with the component's own id so `A2uiSurface` can
+ * assemble the full request shape — the Button itself injects nothing and
+ * knows nothing about a round trip.
  */
 @Component({
   selector: 'lib-a2ui-button',
@@ -40,7 +50,7 @@ import type { A2uiOkNode } from './render-tree';
 })
 export class A2uiButton {
   readonly node = input.required<A2uiOkNode>();
-  readonly action = output<A2uiAction>();
+  readonly action = output<A2uiInternalAction>();
 
   protected readonly label = computed(() =>
     asText(this.node().definition['label']),
@@ -50,7 +60,7 @@ export class A2uiButton {
     const action = this.node().definition.action;
 
     if (action !== undefined) {
-      this.action.emit(action);
+      this.action.emit({ ...action, componentId: this.node().id });
     }
   }
 }
