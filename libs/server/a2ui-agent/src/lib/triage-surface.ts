@@ -1,5 +1,5 @@
 import type { A2uiCreateSurface } from '@linkops/shared/a2ui-protocol';
-import type { Link } from '@linkops/shared/domain';
+import type { Link, TelemetrySample } from '@linkops/shared/domain';
 
 /**
  * What the Assistant is willing to suggest, and the whole of it. Each one is
@@ -23,7 +23,16 @@ export const REMEDIATIONS = [
   },
 ] as const;
 
-const SURFACE_ID = 'triage';
+/**
+ * The one Surface this Assistant authors, offer and confirmation alike — a
+ * reply naming an id this endpoint does not recognise is exactly what an
+ * Action naming an unknown Surface is refused against. Exported so
+ * `StubTriageAgent` can hold the Assistant to a Surface it actually sent.
+ */
+export const SURFACE_ID = 'triage';
+
+/** What the Assistant is willing to recommend, as a single value. */
+export type Remediation = (typeof REMEDIATIONS)[number];
 
 /**
  * Every Surface here is one Card on a root Surface; only its contents
@@ -104,6 +113,55 @@ export function triageSurface(links: readonly Link[]): A2uiCreateSurface {
             },
           },
         },
+      },
+    ),
+  };
+}
+
+/** `—` is a Sample nobody has taken yet, the same rule the Console reads Throughput by. */
+function sampleText(
+  sample: TelemetrySample | null,
+  format: (sample: TelemetrySample) => string,
+): string {
+  return sample === null ? '—' : format(sample);
+}
+
+/**
+ * The confirmation: the Link and the Remediation the operator chose, and the
+ * Sample the recommendation rests on, as two Metrics. Both values are
+ * literal — nothing here is operator-editable, so there is no Data Model
+ * left to bind against. Together with `triageSurface`'s `Select` and
+ * `Button`, this is the last of the six whitelisted component types
+ * exercised by the product rather than only by hostile fixtures.
+ */
+export function confirmationSurface(
+  link: Link,
+  remediation: Remediation,
+  sample: TelemetrySample | null,
+): A2uiCreateSurface {
+  return {
+    surfaceId: SURFACE_ID,
+    components: shell(
+      ['intro', 'snr', 'throughput'],
+      {
+        id: 'intro',
+        component: 'Text',
+        text: `${link.name}: ${remediation.label}`,
+      },
+      {
+        id: 'snr',
+        component: 'Metric',
+        label: 'SNR',
+        value: sampleText(sample, (s) => `${s.snrDb} dB`),
+      },
+      {
+        id: 'throughput',
+        component: 'Metric',
+        label: 'Throughput',
+        value: sampleText(
+          sample,
+          (s) => `${Math.round(s.throughputMbps)} / ${link.capacityMbps} Mbps`,
+        ),
       },
     ),
   };
