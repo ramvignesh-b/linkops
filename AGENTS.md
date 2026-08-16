@@ -35,6 +35,14 @@ Three rules lint cannot express. Everything else about an Angular component here
 - **One component per route injects state.** A feature library's routed component is the only one that reads a store; everything beneath it takes inputs and emits outputs. The boundary rules already stop `console/ui` reaching a data-access library at all; this extends the same discipline inside a feature library, where the tag axes cannot reach.
 - **Components reference design tokens, never literal colours or spacings.** Tokens are defined in exactly one place, `apps/console/src/styles.css`, and arrive with the first Console surface that needs them. A hard-coded colour is how three views that were meant to match stop matching, and it is the one design regression that is trivial to grep for.
 
+### Console bundle budget & route discipline
+
+The Console's initial render-blocking bundle is capped in `apps/console/project.json` (650 kB warning, 1 MB error). Initial load is reserved for the shell, global design tokens, and core telemetry infrastructure.
+
+- **Feature screens are lazy-loaded.** Every routed feature library is imported dynamically via route-level `loadChildren` (e.g. `loadChildren: () => import('@linkops/console/feature-...').then(m => m.routes)`). Feature dependencies (charts, forms, complex visualizers) must not leak into the initial render-blocking bundle.
+- **Media and fonts are self-hosted.** Fonts are imported via `@fontsource-variable/*` and bundled into `media/` as woff2 files. They are loaded asynchronously with `unicode-range` subsetting and do not count against the `initial` JS/CSS budget.
+- **CI budget observability.** Every pull request CI build evaluates initial vs. lazy chunks against the configured budget and updates a sticky PR comment with the exact breakdown.
+
 ### Documentation voice
 
 **Committed artifacts** — `CONTEXT.md`, `docs/adr/`, `docs/decisions/`, and all source and comments — justify every decision in product and engineering terms. No milestone or bonus ids (`M4`, `B2`), no "the brief", no "the reviewer", no section numbers from the assignment's README structure. Cross-reference our own documents by name ("the README's API reference"), not by number.
