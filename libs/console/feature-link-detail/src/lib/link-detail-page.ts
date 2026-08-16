@@ -1,4 +1,4 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -24,6 +24,7 @@ import {
   type TelemetrySample,
 } from '@linkops/shared/domain';
 import { HISTORY_WINDOW_MS, LinkHistory } from './link-history';
+import { isNotFoundError } from './is-not-found';
 
 /**
  * Drilling into a single Link: its full configuration, its latest Telemetry
@@ -493,10 +494,7 @@ export class LinkDetailPage {
           // timeout, a 500, a proxy's 502 — is the Server not answering, and
           // the two get different words.
           error: (cause: unknown) => {
-            const isNotFound =
-              cause instanceof HttpErrorResponse && cause.status === 404;
-
-            if (isNotFound) {
+            if (isNotFoundError(cause)) {
               this.notFound.set(true);
             } else {
               this.unreachable.set(true);
@@ -545,10 +543,7 @@ export class LinkDetailPage {
         error: (cause: unknown) => {
           this.deleteSubscription = null;
 
-          const isNotFound =
-            cause instanceof HttpErrorResponse && cause.status === 404;
-
-          if (isNotFound) {
+          if (isNotFoundError(cause)) {
             this.finishDelete(id);
 
             return;
