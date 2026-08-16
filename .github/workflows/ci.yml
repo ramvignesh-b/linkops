@@ -93,6 +93,8 @@ jobs:
               INITIAL_RAW_BYTES=0
               INITIAL_GZIP_BYTES=0
 
+              WARNING_KB=650.00
+
               for f in "$DIST"/*.js "$DIST"/*.css; do
                 [ -f "$f" ] || continue
                 BASE=$(basename "$f")
@@ -114,7 +116,7 @@ jobs:
 
               echo "| **Initial Total** | **All Initial** | **$TOTAL_INITIAL_RAW_KB** | **$TOTAL_INITIAL_GZIP_KB** |"
               echo ""
-              echo "**Budget Status:** $TOTAL_INITIAL_RAW_KB / 650.00 kB Warning (✅ Pass — Headroom: $(awk "BEGIN {printf \"%.2f kB\", 650 - $INITIAL_RAW_BYTES/1024}"))"
+              echo "**Budget Status:** $TOTAL_INITIAL_RAW_KB / $WARNING_KB kB Warning (✅ Pass — Headroom: $(awk "BEGIN {printf \"%.2f kB\", 650 - $INITIAL_RAW_BYTES/1024}"))"
 
               echo ""
               echo "#### 💤 Lazy Chunks (Loaded on Demand)"
