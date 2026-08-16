@@ -38,9 +38,6 @@
       ],
       "@linkops/console/feature-link-detail": [
         "./libs/console/feature-link-detail/src/index.ts"
-      ],
-      "@linkops/console/feature-assistant": [
-        "./libs/console/feature-assistant/src/index.ts"
       ]
     }
   },

@@ -5,15 +5,24 @@ import {
   effect,
   inject,
   input,
+  signal,
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { applyListQuery, FleetStore } from '@linkops/console/data-access';
 import {
+  AssistantSession,
+  applyListQuery,
+  FleetStore,
+  type AssistantFailure,
+} from '@linkops/console/data-access';
+import {
+  A2uiSurface,
   FleetFilterBar,
+  operatorMessageFor,
   SummaryFigureTile,
   StatusPill,
   ThroughputBar,
 } from '@linkops/console/ui';
+import type { A2uiAction } from '@linkops/shared/a2ui-protocol';
 import {
   linkListQuerySchema,
   type Band,
@@ -60,12 +69,18 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
   selector: 'lib-fleet-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    A2uiSurface,
     FleetFilterBar,
     SummaryFigureTile,
     RouterLink,
     StatusPill,
     ThroughputBar,
   ],
+  // Scoped to this route, not root: the panel's conversation belongs to the
+  // Fleet view the way `LinkHistory` belongs to the detail route, and a
+  // fresh session is what makes "closing leaves the Fleet exactly as it was"
+  // trivially true — the store the panel never touches is a different object.
+  providers: [AssistantSession],
   template: `
     <section class="summary">
       <div class="summary-header">
@@ -118,6 +133,38 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
       (sortChange)="updateQuery({ sort: $event })"
       (dirChange)="updateQuery({ dir: $event })"
     />
+
+    @if (assistantOpen()) {
+      <section class="assistant-panel">
+        @defer (on immediate) {
+          @if (assistant.surface(); as surface) {
+            <lib-a2ui-surface
+              [surface]="surface"
+              (action)="onAssistantAction($event)"
+            />
+          } @else if (assistant.failure(); as failure) {
+            <p class="assistant-failure">
+              {{ assistantFailureMessage(failure) }}
+            </p>
+          } @else {
+            <p class="assistant-pending">Asking the assistant…</p>
+          }
+        } @placeholder {
+          <p class="assistant-pending">Loading the assistant…</p>
+        }
+        <button
+          type="button"
+          class="close-assistant"
+          (click)="closeAssistant()"
+        >
+          Close
+        </button>
+      </section>
+    } @else {
+      <button type="button" class="ask-assistant" (click)="openAssistant()">
+        Ask the assistant
+      </button>
+    }
 
     <table>
       <thead>
@@ -273,12 +320,56 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
     .empty {
       color: var(--text-muted);
     }
+
+    .ask-assistant,
+    .close-assistant {
+      margin-bottom: var(--space-3);
+      padding: var(--space-2) var(--space-3);
+      background: var(--surface-raised);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-family: var(--font-family-body);
+      font-size: var(--font-size-body);
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+
+    .assistant-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--space-2);
+      margin-bottom: var(--space-3);
+    }
+
+    .assistant-failure {
+      margin: 0;
+      color: var(--status-down);
+    }
+
+    .assistant-pending {
+      margin: 0;
+      color: var(--text-muted);
+    }
   `,
 })
 export class FleetPage {
   private readonly store = inject(FleetStore);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  protected readonly assistant = inject(AssistantSession);
+
+  /**
+   * Component state, not URL state: the panel is a transient conversation
+   * with no shareable address, unlike the filter and sort above it. Gates
+   * the `@defer` block itself, so nothing inside — the renderer, its Data
+   * Model, the request it will send — is instantiated until an operator
+   * opens the panel for the first time; the trigger inside is `on immediate`
+   * because this `@if` is already the interaction gate. The initial bundle
+   * carries none of it either way: `console/ui`'s A2UI renderer is reachable
+   * only from this route's own lazy chunk, never from the eagerly-loaded one.
+   */
+  protected readonly assistantOpen = signal(false);
 
   // Bound by the router (withComponentInputBinding), one input per query
   // parameter — raw strings, undefined when absent. Named to match the query
@@ -383,6 +474,37 @@ export class FleetPage {
 
   protected throughputOf(linkId: LinkId): number | null {
     return this.latestSample().get(linkId)?.throughputMbps ?? null;
+  }
+
+  /** Opens the panel and asks the Assistant exactly once. */
+  protected openAssistant(): void {
+    this.assistantOpen.set(true);
+    this.assistant.open();
+  }
+
+  /** The Fleet is untouched by any of this — closing costs the operator nothing. */
+  protected closeAssistant(): void {
+    this.assistantOpen.set(false);
+  }
+
+  /**
+   * The renderer's one output. Nothing consumes it yet: the round trip that
+   * sends it back to the Assistant is a later slice, and a Button emitting
+   * into nothing is not a defect — this panel's whole job today is asking
+   * once and rendering the answer.
+   */
+  protected onAssistantAction(_action: A2uiAction): void {
+    // Intentionally empty until the round trip lands.
+  }
+
+  /** Exhaustive on `kind`, matching `operatorMessageFor`'s own guard on `code`. */
+  protected assistantFailureMessage(failure: AssistantFailure): string {
+    switch (failure.kind) {
+      case 'invalid-payload':
+        return operatorMessageFor(failure.code);
+      case 'transport':
+        return 'The assistant did not answer. Try again.';
+    }
   }
 
   /** One control changed: merged into the query string, which is the state. */
