@@ -33,6 +33,10 @@
   --border: #d5dae1;
   --divider: #ebeef2;
 
+  /* Assistant surface - triage panel */
+  --surface-assistant: #f0f4f8;
+  --border-assistant: #c8d3e0;
+
   /* Text */
   --text-primary: #16191d;
   --text-muted: #5b6472;
