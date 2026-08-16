@@ -134,77 +134,98 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
       (dirChange)="updateQuery({ dir: $event })"
     />
 
-    @if (assistantOpen()) {
-      <section class="assistant-panel">
-        @defer (on immediate) {
-          @if (assistant.surface(); as surface) {
-            <lib-a2ui-surface
-              [surface]="surface"
-              (action)="onAssistantAction($event)"
-            />
-          } @else if (assistant.failure(); as failure) {
-            <p class="assistant-failure">
-              {{ assistantFailureMessage(failure) }}
-            </p>
-          } @else {
-            <p class="assistant-pending">Asking the assistant…</p>
-          }
-        } @placeholder {
-          <p class="assistant-pending">Loading the assistant…</p>
-        }
-        <button
-          type="button"
-          class="close-assistant"
-          (click)="closeAssistant()"
-        >
-          Close
-        </button>
-      </section>
-    } @else {
-      <button type="button" class="ask-assistant" (click)="openAssistant()">
-        Ask the assistant
-      </button>
-    }
+    <div class="fleet-content-layout">
+      <div class="fleet-table-container">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Link</th>
+              <th scope="col">Sites</th>
+              <th scope="col">Band</th>
+              <th scope="col" class="col-status">Status</th>
+              <th scope="col" class="col-throughput">Throughput</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (link of visibleLinks(); track link.id) {
+              <tr [attr.data-link-id]="link.id">
+                <td class="cell-name">
+                  <a [routerLink]="['/links', link.id]">{{ link.name }}</a>
+                </td>
+                <td class="cell-sites">
+                  <span class="site-from">{{ link.siteA }}</span>
+                  <span class="site-arrow" aria-hidden="true"> → </span>
+                  <span class="site-to">{{ link.siteB }}</span>
+                </td>
+                <td class="cell-band">{{ link.band }}</td>
+                <td class="cell-status">
+                  <lib-status-pill [status]="link.status" />
+                </td>
+                <td class="cell-throughput">
+                  <lib-throughput-bar
+                    [throughputMbps]="throughputOf(link.id)"
+                    [capacityMbps]="link.capacityMbps"
+                  />
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td class="empty" colspan="5">No Links match this filter.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
 
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">Link</th>
-          <th scope="col">Sites</th>
-          <th scope="col">Band</th>
-          <th scope="col" class="col-status">Status</th>
-          <th scope="col" class="col-throughput">Throughput</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (link of visibleLinks(); track link.id) {
-          <tr [attr.data-link-id]="link.id">
-            <td class="cell-name">
-              <a [routerLink]="['/links', link.id]">{{ link.name }}</a>
-            </td>
-            <td class="cell-sites">
-              <span class="site-from">{{ link.siteA }}</span>
-              <span class="site-arrow" aria-hidden="true"> → </span>
-              <span class="site-to">{{ link.siteB }}</span>
-            </td>
-            <td class="cell-band">{{ link.band }}</td>
-            <td class="cell-status">
-              <lib-status-pill [status]="link.status" />
-            </td>
-            <td class="cell-throughput">
-              <lib-throughput-bar
-                [throughputMbps]="throughputOf(link.id)"
-                [capacityMbps]="link.capacityMbps"
-              />
-            </td>
-          </tr>
-        } @empty {
-          <tr>
-            <td class="empty" colspan="5">No Links match this filter.</td>
-          </tr>
+      <aside class="assistant-bento" [class.open]="assistantOpen()">
+        <div class="assistant-bento-header">
+          <div class="assistant-badge">Assistant</div>
+          @if (assistantOpen()) {
+            <button
+              type="button"
+              class="close-assistant"
+              (click)="closeAssistant()"
+            >
+              Close
+            </button>
+          }
+        </div>
+
+        @if (assistantOpen()) {
+          <section class="assistant-panel">
+            @defer (on immediate) {
+              @if (assistant.surface(); as surface) {
+                <lib-a2ui-surface
+                  [surface]="surface"
+                  (action)="onAssistantAction($event)"
+                />
+              } @else if (assistant.failure(); as failure) {
+                <p class="assistant-failure">
+                  {{ assistantFailureMessage(failure) }}
+                </p>
+              } @else {
+                <p class="assistant-pending">Asking the assistant…</p>
+              }
+            } @placeholder {
+              <p class="assistant-pending">Loading the assistant…</p>
+            }
+          </section>
+        } @else {
+          <div class="assistant-closed-prompt">
+            <p class="assistant-description">
+              Get triage recommendations for degraded links across the fleet.
+            </p>
+            <button
+              type="button"
+              class="ask-assistant"
+              (click)="openAssistant()"
+            >
+              Ask the assistant
+            </button>
+          </div>
         }
-      </tbody>
-    </table>
+      </aside>
+    </div>
   `,
   styles: `
     .summary {
@@ -253,8 +274,21 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
       font-weight: var(--font-weight-medium);
     }
 
+    .fleet-content-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: var(--space-4);
+      align-items: start;
+    }
+
+    .fleet-table-container {
+      min-width: 0;
+      overflow-x: auto;
+    }
+
     table {
       width: 100%;
+      min-width: 860px;
       border-collapse: collapse;
       background: var(--surface-raised);
       border: 1px solid var(--border);
@@ -321,25 +355,83 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
       color: var(--text-muted);
     }
 
-    .ask-assistant,
-    .close-assistant {
-      margin-bottom: var(--space-3);
+    .assistant-bento {
+      background: var(--surface-assistant);
+      border: 1px solid var(--border-assistant);
+      border-radius: var(--radius);
+      padding: var(--space-3);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .assistant-bento-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+    }
+
+    .assistant-badge {
+      font-family: var(--font-family-heading);
+      font-size: var(--font-size-small);
+      font-weight: var(--font-weight-strong);
+      color: var(--text-muted);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .assistant-closed-prompt {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .assistant-description {
+      margin: 0;
+      font-size: var(--font-size-small);
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .ask-assistant {
+      align-self: flex-start;
+      margin: 0;
       padding: var(--space-2) var(--space-3);
       background: var(--surface-raised);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       font-family: var(--font-family-body);
       font-size: var(--font-size-body);
-      color: var(--text-primary);
+      font-weight: var(--font-weight-medium);
+      color: var(--accent);
       cursor: pointer;
+    }
+
+    .ask-assistant:hover {
+      background: var(--surface-page);
+    }
+
+    .close-assistant {
+      margin: 0;
+      padding: var(--space-1) var(--space-2);
+      background: var(--surface-raised);
+      border: 1px solid var(--border-assistant);
+      border-radius: var(--radius);
+      font-family: var(--font-family-body);
+      font-size: var(--font-size-small);
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+
+    .close-assistant:hover {
+      color: var(--text-primary);
     }
 
     .assistant-panel {
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
       gap: var(--space-2);
-      margin-bottom: var(--space-3);
     }
 
     .assistant-failure {
@@ -350,6 +442,12 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
     .assistant-pending {
       margin: 0;
       color: var(--text-muted);
+    }
+
+    @media (max-width: 1024px) {
+      .fleet-content-layout {
+        grid-template-columns: 1fr;
+      }
     }
   `,
 })

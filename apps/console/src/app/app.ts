@@ -50,9 +50,8 @@ import { ConnectionBanner } from '@linkops/console/ui';
       display: flex;
       flex-direction: column;
       gap: var(--space-3);
-      /* A fixed desktop layout: an operator console served next to the device
-         it manages is used on a desktop, so there are no breakpoints. */
-      max-width: 1100px;
+      /* A desktop layout: widened to accommodate the fleet table and the assistant panel side-by-side */
+      max-width: 1440px;
       padding: var(--space-4);
     }
   `,
