@@ -117,6 +117,9 @@ _Avoid_: memory issue, resource issue
 The triage helper: it reads the Fleet, names the Links whose readings need attention, and suggests a Remediation for one of them. It **recommends and never writes** — no Assistant reply changes a Link, because an agent-authored payload on the write path to a live radio Link is exactly what the renderer's boundary exists to prevent. The operator applies the change through the Link form.
 _Avoid_: AI, bot, chat, copilot
 
+**Agent**:
+The Assistant's role in the A2UI protocol — the side that authors a Surface, as opposed to the renderer that displays one. A protocol word, and the reason the endpoint, the library and the injection token all read `agent`: they name the wire role. In product terms it is always the **Assistant**, and prose says Assistant.
+
 **Surface**:
 A screen's worth of UI described as a document by the Assistant, and rendered by components this Console owns. A Surface is the message, not the screen it lands on — "the Surface" never means the panel, the page or the viewport.
 _Avoid_: view, screen, panel, page
