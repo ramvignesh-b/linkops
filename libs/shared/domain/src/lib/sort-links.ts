@@ -1,4 +1,5 @@
-import type { Link, LinkSortKey, SortDir } from '@linkops/shared/domain';
+import type { Link } from './link';
+import type { LinkSortKey, SortDir } from './link-list-query';
 
 /**
  * A Link paired with the one Sample-derived field a sort key can need but
@@ -16,6 +17,11 @@ export interface SortableLink {
  * tiebreak direction never flips with `dir`: `id` has no "reverse" meaning of
  * its own, so flipping it would just be a second way to get the same rows in
  * a different, equally arbitrary order.
+ *
+ * Shared, not duplicated: `server/links-api` sorts `GET /api/links` with it
+ * and `console/data-access` sorts the Console's own filtered view with it, so
+ * the two orderings — ties included — cannot drift apart the way two
+ * independently written comparators eventually would.
  */
 export function sortLinks(
   entries: readonly SortableLink[],

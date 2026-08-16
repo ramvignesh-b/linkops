@@ -13,9 +13,11 @@ import {
 import { ApiResponse } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import {
+  sortLinks,
   toLinkId,
   withDerivedStatus,
   type Link,
+  type SortableLink,
   type TelemetrySample,
 } from '@linkops/shared/domain';
 import {
@@ -35,7 +37,6 @@ import { TelemetryWindowQueryDto } from './dto/telemetry-window-query.dto';
 import { LinkNameTakenError } from './errors/link-name-taken.error';
 import { LinkNotFoundError } from './errors/link-not-found.error';
 import { LinkVersionConflictError } from './errors/link-version-conflict.error';
-import { sortLinks, type SortableLink } from './sort-links';
 
 @Controller('links')
 export class LinksController {
