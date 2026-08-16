@@ -23,6 +23,7 @@ import {
   type Link,
   type LinkCreate,
 } from '@linkops/shared/domain';
+import { isNotFoundError } from './is-not-found';
 
 /**
  * The differing pair a `LINK_VERSION_CONFLICT` renders: the operator's own
@@ -67,10 +68,10 @@ interface Conflict {
         The Server did not answer. Nothing can be edited until it does.
       </p>
     } @else if (mode(); as formMode) {
-      @if (conflict(); as c) {
+      @if (conflict(); as active) {
         <lib-link-conflict
-          [mine]="c.mine"
-          [theirs]="c.theirs"
+          [mine]="active.mine"
+          [theirs]="active.theirs"
           (takeTheirs)="onTakeTheirs()"
           (keepMine)="onKeepMine()"
         />
@@ -153,10 +154,7 @@ export class LinkEditPage {
           this.mode.set({ kind: 'edit', link });
         },
         error: (cause: unknown) => {
-          const isNotFound =
-            cause instanceof HttpErrorResponse && cause.status === 404;
-
-          if (isNotFound) {
+          if (isNotFoundError(cause)) {
             this.notFound.set(true);
           } else {
             this.loadUnreachable.set(true);
@@ -171,20 +169,20 @@ export class LinkEditPage {
   }
 
   protected onTakeTheirs(): void {
-    const c = this.conflict();
-    if (c === null) return;
+    const active = this.conflict();
+    if (active === null) return;
 
     // A fresh `edit` mode is what re-seeds `LinkForm`'s value — its own
     // effect does the repaint, so nothing here touches the form directly.
-    this.mode.set({ kind: 'edit', link: c.theirs });
-    this.version = c.theirs.version;
+    this.mode.set({ kind: 'edit', link: active.theirs });
+    this.version = active.theirs.version;
     this.pendingPatch = null;
     this.conflict.set(null);
   }
 
   protected onKeepMine(): void {
-    const c = this.conflict();
-    if (c === null) return;
+    const active = this.conflict();
+    if (active === null) return;
 
     // The conflict view going away recreates `LinkForm` (it sits behind an
     // `@if`/`@else` on `conflict()`, the same as `LinkDetailPage`'s own
@@ -192,9 +190,9 @@ export class LinkEditPage {
     // `mode` moves to the operator's own patch here, not just `theirs`.
     // Otherwise a resubmission that itself fails for a reason other than
     // another conflict would show the pristine Link this route first loaded.
-    this.mode.set({ kind: 'edit', link: { ...c.theirs, ...c.mine } });
+    this.mode.set({ kind: 'edit', link: { ...active.theirs, ...active.mine } });
     this.conflict.set(null);
-    this.submitPatch(c.mine);
+    this.submitPatch(active.mine);
   }
 
   private submitPatch(value: LinkCreate): void {
