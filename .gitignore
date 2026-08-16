@@ -42,7 +42,9 @@ docs/decisions
 
 # AI agent tooling from `nx configure-ai-agents`. Useful locally for the Nx MCP
 # server and its skills; not part of the product, so it stays out of the repo.
-.agents/
+# Matched without a trailing slash: in a worktree `.agents` is a symlink to
+# the main checkout, and `.agents/` matches only a real directory.
+.agents
 .gemini/
 .claude/settings.json
 CLAUDE.md
