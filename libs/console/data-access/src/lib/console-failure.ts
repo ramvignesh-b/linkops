@@ -15,3 +15,21 @@ export interface TransportFailure {
   cause: 'offline' | 'timeout' | 'http-no-envelope';
   status?: number;
 }
+
+/**
+ * The third kind of failure: the Server answered, but not with something
+ * usable. Neither a `TransportFailure` (the Server did answer) nor an Error
+ * Envelope (the reply was not one) — synthesising either would lie about
+ * where the failure came from, the same reasoning `TransportFailure`'s own
+ * comment gives in reverse. `code` stays `A2UI_INVALID_PAYLOAD` rather than a
+ * bare literal so `operatorMessageFor` reads it directly.
+ */
+export interface AssistantInvalidPayloadFailure {
+  kind: 'invalid-payload';
+  code: 'A2UI_INVALID_PAYLOAD';
+}
+
+/** Every failure the panel can show, as distinct from `ApiErrorBody`'s other codes. */
+export type AssistantFailure =
+  | TransportFailure
+  | AssistantInvalidPayloadFailure;

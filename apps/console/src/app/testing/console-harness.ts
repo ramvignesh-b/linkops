@@ -293,6 +293,44 @@ function linkEditAndDeleteScreen(root: HTMLElement) {
   };
 }
 
+/** The triage panel's queries and controls — grouped out of `screen` for the same reason as `linkDetailScreen`. */
+function assistantScreen(root: HTMLElement) {
+  return {
+    askAssistant: (): void => {
+      root.querySelector<HTMLElement>('.ask-assistant')?.click();
+    },
+    closeAssistant: (): void => {
+      root.querySelector<HTMLElement>('.close-assistant')?.click();
+    },
+    assistantCardTitle: (): string => text(root.querySelector('.a2ui-card h3')),
+    assistantTexts: (): string[] =>
+      [...root.querySelectorAll('.a2ui-text')].map((element) => text(element)),
+    assistantSelectOptions: (name: string): string[] =>
+      [
+        ...root.querySelectorAll<HTMLOptionElement>(
+          `select[name="${name}"] option`,
+        ),
+      ].map((option) => text(option)),
+    assistantButtonLabel: (): string =>
+      text(root.querySelector('.a2ui-button')),
+    assistantFallbackLabels: (): string[] =>
+      [...root.querySelectorAll('.a2ui-fallback')].map((element) =>
+        text(element),
+      ),
+    assistantFailureText: (): string =>
+      text(root.querySelector('.assistant-failure')),
+    setAssistantSelect: (name: string, value: string): void => {
+      const element = root.querySelector<HTMLSelectElement>(
+        `select[name="${name}"]`,
+      );
+      if (element === null)
+        throw new Error(`no assistant select named ${name}`);
+      element.value = value;
+      element.dispatchEvent(new Event('change'));
+    },
+  };
+}
+
 /** The Fleet list route's queries — grouped out of `screen` to keep it inside the lint budget. */
 function fleetListScreen(root: HTMLElement) {
   /** Sets a control's value and dispatches the `change` the component listens for. */
@@ -363,6 +401,7 @@ export function screen(fixture: ComponentFixture<App>) {
     ...linkCreateScreen(root),
     ...linkConflictScreen(root),
     ...linkEditAndDeleteScreen(root),
+    ...assistantScreen(root),
   };
 }
 

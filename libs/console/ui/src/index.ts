@@ -1,3 +1,4 @@
+export * from './lib/a2ui/a2ui-surface';
 export * from './lib/connection-banner';
 export * from './lib/field-issue-lookup';
 export * from './lib/fleet-breadcrumb';
