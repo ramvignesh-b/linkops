@@ -206,8 +206,8 @@ dev-mode checks, so production should cost at most this, not more.
 | `libs/server/telemetry` | The Simulator — one fleet-wide interval, never a timer per Link — the Sample store behind it, `TelemetryPort` as the read side, and `TelemetryBus`, which publishes one Tick to whoever is subscribed. |
 | `libs/server/links-api` | The HTTP surface — `GET /api/links`, `GET /api/links/:id`, `POST /api/links`, `PATCH /api/links/:id`, `DELETE /api/links/:id`, `GET /api/links/:id/telemetry`, `GET /api/fleet/summary` — the DTOs `createZodDto` generates from the shared schemas, the globally registered `nestjs-zod` validation pipe, and the one exception filter mapping domain errors onto the error envelope. |
 | `libs/server/stream-api` | `GET /api/stream`, the Tick-to-events pipeline every connection shares, and the subscriber count that makes release observable. |
-| `libs/shared/a2ui-protocol` | The Assistant's wire contract: the A2UI envelope, the flat component list, the whitelisted component names, the depth and count caps as constants, and the guarded JSON-Pointer read and write. Framework-free, one runtime dependency: zod. |
-| `libs/server/a2ui-agent` | `POST /api/agent/ui` and the agent behind it — a one-method interface, and the deterministic stub that implements it by reading the Roster and Telemetry through the providers every other feature shares. |
+| `libs/shared/a2ui-protocol` | The Assistant's wire contract: the A2UI envelope, the request union — opening a conversation and the Action that carries an operator's choice back — the flat component list, the whitelisted component names, the depth and count caps as constants, and the guarded JSON-Pointer read and write. Framework-free, one runtime dependency: zod. |
+| `libs/server/a2ui-agent` | `POST /api/agent/ui` and the agent behind it — a one-method interface, and the deterministic stub that implements it by reading the Roster and Telemetry through the providers every other feature shares, answering an Action with a confirmation Surface rather than a write. |
 | `apps/api` | Module registration only. |
 | `libs/console/data-access` | The Console's wire and its state: the stream client behind the `EVENT_SOURCE` token, schema validation of every frame, the Tick coalescer, and `FleetStore` — the Roster, the latest Sample per Link, the Summary and the connection state, holding all three of the first as one value so a Tick applies as one write. `TransportFailure` and `applyListQuery` — the Console's filter-and-sort over the store — live here too, alongside the triage panel's `AssistantClient` and `AssistantSession`, and `AssistantFailure`, the third kind of failure for a Server reply that answered but could not be used. |
 | `libs/console/ui` | Presentational only, domain types in and events out, no store and no router: the Status pill, the Throughput-against-Capacity bar, the Summary Figure tile, the connection banner, the Fleet filter bar, and the A2UI renderer — `lib-a2ui-surface` and its six whitelisted components (`Surface`, `Card`, `Text`, `Button`, `Select`, `Metric`) plus the labelled fallback an unknown or over-bounded one degrades to. |
@@ -581,6 +581,45 @@ components the Console owns rather than by markup the Server sent.
 }
 ```
 
+**The round trip.** Pressing the offer's Button posts an Action back — the
+Surface it came from, the component that raised it, the event name, and the
+Data Model values that event carries — and the Assistant answers with a
+confirmation Surface naming the Link and the Remediation chosen, and the
+Sample the recommendation rests on.
+
+```json
+{
+  "kind": "act",
+  "surfaceId": "triage",
+  "componentId": "recommend",
+  "event": "recommend",
+  "data": { "linkId": "lnk_0003", "remediation": "narrow-channel" }
+}
+```
+
+```json
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "triage",
+    "components": [
+      { "id": "root", "component": "Surface", "children": ["card"] },
+      { "id": "card", "component": "Card", "title": "Triage", "children": ["intro", "snr", "throughput"] },
+      { "id": "intro", "component": "Text", "text": "Warehouse to Yard: Narrow the Channel Width — less throughput, less interference" },
+      { "id": "snr", "component": "Metric", "label": "SNR", "value": "12 dB" },
+      { "id": "throughput", "component": "Metric", "label": "Throughput", "value": "84 / 400 Mbps" }
+    ]
+  }
+}
+```
+
+Between the offer and the confirmation, the two Surfaces exercise every one
+of the six whitelisted component types — `Metric` appears nowhere else. **An
+Action naming a Surface, Link or Remediation the Assistant does not
+recognise is refused with `400` `A2UI_INVALID_PAYLOAD`, not improvised** —
+the same code the Console produces in the other direction, because both name
+one thing: an A2UI document that could not be used.
+
 **The Assistant recommends and never writes.** No Surface it can author
 changes a Link — the operator applies a Remediation through the Link form,
 which validates against the same schemas and carries the version check. A
@@ -600,9 +639,10 @@ picker.
 
 **The agent behind it is a deterministic stub** — a pure function of its
 request and the Roster, with no clock of its own, no randomness, no network
-and no key, so the same Fleet answers the same Surface twice. It sits behind
-a one-method interface and an injection token, which is the seam a model
-client would be swapped in at.
+and no key, so the same request against the same Fleet answers the same
+Surface twice, opening a conversation or acting within one alike. It sits
+behind a one-method interface and an injection token, which is the seam a
+model client would be swapped in at.
 
 A body that is not an Assistant request returns `400` `VALIDATION_FAILED`
 through the same pipe and envelope as every other endpoint.
@@ -668,7 +708,7 @@ owns that copy because the Server does not know where an error lands.
 | `LINK_VERSION_CONFLICT` | 409 | `{ currentVersion, current }` | Editing a Link with a stale `version` |
 | `LINK_NAME_TAKEN` | 409 | `{ name }` | Creating or renaming a Link to a name already in use |
 | `VALIDATION_FAILED` | 400 | `{ issues: FieldIssue[] }` | A request body failing schema validation |
-| `A2UI_INVALID_PAYLOAD` | 400 | `{ reason }` | An assistant payload the renderer will not accept |
+| `A2UI_INVALID_PAYLOAD` | 400 | `{ reason }` | `POST /api/agent/ui`, when an Action names a Surface, Link or Remediation the Assistant does not recognise. The Console produces the same code locally — never over HTTP — when a reply fails the renderer's own validation |
 
 The `code` union is closed and has no internal-error member: an error the
 exception filter does not recognise is never wrapped in a synthesised
@@ -677,10 +717,7 @@ passes through as Nest's default response instead, so a second client can
 tell "the Server said no" from "something else broke" by whether the body
 matches this shape at all.
 
-Every code above except `A2UI_INVALID_PAYLOAD` is produced by the endpoints
-documented here; that one is declared now, ahead of the endpoint that produces
-it, so a client's exhaustive `switch` on `code` never has to grow between
-slices.
+Every code above is produced by an endpoint documented here.
 
 ## Development
 
