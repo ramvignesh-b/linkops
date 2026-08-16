@@ -1,4 +1,8 @@
-import { toLinkId, type LinkId } from '@linkops/shared/domain';
+import {
+  matchesBandAndQuery,
+  toLinkId,
+  type LinkId,
+} from '@linkops/shared/domain';
 import type {
   CreateLinkResult,
   LinkDraft,
@@ -85,17 +89,8 @@ export class InMemoryLinkRepository implements LinkRepository {
   }
 
   findAll(filter: LinkFilter = {}): LinkRecord[] {
-    const q = filter.q?.toLowerCase();
-
     return [...this.links.values()]
-      .filter((link) => filter.band === undefined || link.band === filter.band)
-      .filter(
-        (link) =>
-          q === undefined ||
-          link.name.toLowerCase().includes(q) ||
-          link.siteA.toLowerCase().includes(q) ||
-          link.siteB.toLowerCase().includes(q),
-      )
+      .filter((link) => matchesBandAndQuery(link, filter))
       .map((link) => ({ ...link }));
   }
 

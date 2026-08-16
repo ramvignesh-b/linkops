@@ -1,4 +1,5 @@
 import {
+  matchesBandAndQuery,
   sortLinks,
   type Link,
   type LinkId,
@@ -10,11 +11,13 @@ import {
 /**
  * Filters and sorts a Roster against a `LinkListQuery` — the Console's own
  * mirror of what `GET /api/links` does server-side, run over the store
- * instead of the wire so a filtered view stays live. `status`, `band` and `q`
- * match `LinksController.findAll`'s semantics exactly (`status` on the kind
- * only, `band` exact, `q` a case-insensitive substring of name, siteA or
- * siteB), and `sortLinks` is the same function the Server sorts with, so the
- * two orderings — ties included — can never drift apart.
+ * instead of the wire so a filtered view stays live. `band` and `q` run
+ * through `matchesBandAndQuery`, the same predicate
+ * `server/links-data-access`'s repository filters with; `status` compares
+ * the kind only, matching `LinksController.findAll`'s own status filter;
+ * `sortLinks` is the same function the Server sorts with. None of the three
+ * is reimplemented here, so none of the three can drift from its Server
+ * counterpart.
  *
  * `throughputMbps` for the sort comes from `latestSample`, reading 0 for a
  * Link with no Sample yet — the same "no data" default the Server's
@@ -26,21 +29,12 @@ export function applyListQuery(
   latestSample: ReadonlyMap<LinkId, TelemetrySample>,
   query: LinkListQuery,
 ): Link[] {
-  const q = query.q?.toLowerCase();
-
   const entries: SortableLink[] = links
     .filter(
       (link) =>
         query.status === undefined || link.status.status === query.status,
     )
-    .filter((link) => query.band === undefined || link.band === query.band)
-    .filter(
-      (link) =>
-        q === undefined ||
-        link.name.toLowerCase().includes(q) ||
-        link.siteA.toLowerCase().includes(q) ||
-        link.siteB.toLowerCase().includes(q),
-    )
+    .filter((link) => matchesBandAndQuery(link, query))
     .map((link) => ({
       link,
       throughputMbps: latestSample.get(link.id)?.throughputMbps ?? 0,

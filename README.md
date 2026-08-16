@@ -65,7 +65,9 @@ enough to send a colleague the same view. `sortLinks` moved out of
 `server/links-api` into `shared/domain` for exactly this reason: the Console
 sorts its own filtered list with the identical function the Server sorts the
 Roster with, ties included, rather than a second comparator that could drift
-from the first one edit at a time. Filtering and sorting are derived over the
+from the first one edit at a time. `band` and `q` run through
+`matchesBandAndQuery`, the same predicate `server/links-data-access`'s
+repository filters with, for the same reason. Filtering and sorting are derived over the
 store with a `computed`, so a Link that transitions to `degraded` on a later
 Tick enters a `degraded`-only view immediately — no refetch, because there was
 never a request to repeat. A query string the schema cannot parse — a
@@ -186,7 +188,7 @@ because it answers *why*, not *how bad*.
 
 | Library | Owns |
 |---|---|
-| `libs/shared/domain` | The wire schemas (`Link`, `TelemetrySample`, `FleetSummary`), the branded `LinkId`, `deriveStatus` — the one function in the system entitled to an opinion about what "good" is — `linkListQuerySchema` and `sortLinks`, shared by the Server's `GET /api/links` and the Console's own filtered view, and the error vocabulary (`ApiErrorBody`, the `code` union, `FieldIssue`, `zodIssuesToFieldIssues`). Framework-free, one runtime dependency: zod. |
+| `libs/shared/domain` | The wire schemas (`Link`, `TelemetrySample`, `FleetSummary`), the branded `LinkId`, `deriveStatus` — the one function in the system entitled to an opinion about what "good" is — `linkListQuerySchema`, `sortLinks` and `matchesBandAndQuery`, shared by the Server's `GET /api/links` and the Console's own filtered view, and the error vocabulary (`ApiErrorBody`, the `code` union, `FieldIssue`, `zodIssuesToFieldIssues`). Framework-free, one runtime dependency: zod. |
 | `libs/server/links-data-access` | `LinkRepository`, its in-memory implementation, and the ten-Link seed. Status is deliberately absent from the stored record — it is derived from Telemetry the repository has never seen. |
 | `libs/server/telemetry` | The Simulator — one fleet-wide interval, never a timer per Link — the Sample store behind it, `TelemetryPort` as the read side, and `TelemetryBus`, which publishes one Tick to whoever is subscribed. |
 | `libs/server/links-api` | The HTTP surface — `GET /api/links`, `GET /api/links/:id`, `POST /api/links`, `PATCH /api/links/:id`, `DELETE /api/links/:id`, `GET /api/links/:id/telemetry`, `GET /api/fleet/summary` — the DTOs `createZodDto` generates from the shared schemas, the globally registered `nestjs-zod` validation pipe, and the one exception filter mapping domain errors onto the error envelope. |

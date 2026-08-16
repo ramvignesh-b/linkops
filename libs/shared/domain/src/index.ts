@@ -5,6 +5,7 @@ export * from './lib/link-create';
 export * from './lib/link-patch';
 export * from './lib/link-list-query';
 export * from './lib/sort-links';
+export * from './lib/matches-band-and-query';
 export * from './lib/telemetry-sample';
 export * from './lib/telemetry-window-query';
 export * from './lib/fleet-summary';
