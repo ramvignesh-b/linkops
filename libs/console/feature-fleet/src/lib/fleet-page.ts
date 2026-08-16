@@ -22,7 +22,7 @@ import {
   StatusPill,
   ThroughputBar,
 } from '@linkops/console/ui';
-import type { A2uiAction } from '@linkops/shared/a2ui-protocol';
+import type { A2uiActionRequest } from '@linkops/shared/a2ui-protocol';
 import {
   linkListQuerySchema,
   type Band,
@@ -586,13 +586,11 @@ export class FleetPage {
   }
 
   /**
-   * The renderer's one output. Nothing consumes it yet: the round trip that
-   * sends it back to the Assistant is a later slice, and a Button emitting
-   * into nothing is not a defect — this panel's whole job today is asking
-   * once and rendering the answer.
+   * The renderer's one output. Sends the Action to the Assistant and renders
+   * the new Surface it answers with.
    */
-  protected onAssistantAction(_action: A2uiAction): void {
-    // Intentionally empty until the round trip lands.
+  protected onAssistantAction(action: A2uiActionRequest): void {
+    this.assistant.act(action);
   }
 
   /** Exhaustive on `kind`, matching `operatorMessageFor`'s own guard on `code`. */

@@ -4,8 +4,7 @@ import {
   input,
   output,
 } from '@angular/core';
-import type { A2uiAction } from '@linkops/shared/a2ui-protocol';
-import { A2uiButton } from './a2ui-button';
+import { A2uiButton, type A2uiInternalAction } from './a2ui-button';
 import { A2uiCard } from './a2ui-card';
 import { A2uiFallback } from './a2ui-fallback';
 import { A2uiMetric } from './a2ui-metric';
@@ -99,5 +98,5 @@ export class A2uiNode {
   readonly node = input.required<A2uiRenderNode>();
   readonly dataModel = input.required<Record<string, unknown>>();
   readonly write = output<{ path: string; value: unknown }>();
-  readonly action = output<A2uiAction>();
+  readonly action = output<A2uiInternalAction>();
 }
