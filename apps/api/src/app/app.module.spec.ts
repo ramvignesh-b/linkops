@@ -6,6 +6,7 @@ import {
   linkSchema,
   linkStatusEventSchema,
 } from '@linkops/shared/domain';
+import { buildOpenApiDocument } from '@linkops/server/links-api';
 import { SseTestClient, until } from './sse-client.fixture';
 import { AppModule } from './app.module';
 
@@ -22,6 +23,7 @@ import { AppModule } from './app.module';
  */
 function useTickingApp(): {
   http: () => ReturnType<INestApplication['getHttpServer']>;
+  instance: () => INestApplication;
   connect: () => Promise<SseTestClient>;
 } {
   let app: INestApplication;
@@ -48,6 +50,7 @@ function useTickingApp(): {
 
   return {
     http: () => app.getHttpServer(),
+    instance: () => app,
     connect: async () => {
       const client = await SseTestClient.connect(`${baseUrl}/stream`);
       clients.push(client);
@@ -171,5 +174,36 @@ describe('edge-triggered events from the per-Tick Roster diff', () => {
         false,
       );
     }
+  });
+});
+
+/**
+ * The Assistant's endpoint validated and shaped by the application-wide pipe
+ * and filter, which `ServerLinksApiModule` provides. Its own library cannot
+ * assert this: a feature library may not import another feature library, so
+ * the module spec there boots without either, and the assembled app is the
+ * only place the two meet. Same rule, same answer, as the edge-triggered
+ * events above.
+ */
+describe('the Assistant endpoint under the application-wide pipe and filter', () => {
+  const app = useTickingApp();
+
+  it('refuses a body that is not an Assistant request, in the error envelope', async () => {
+    const response = await request(app.http())
+      .post('/agent/ui')
+      .send({ kind: 'nonsense' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_FAILED');
+    expect(response.body.error.details.issues.length).toBeGreaterThan(0);
+  });
+
+  it('describes itself in the OpenAPI document the API serves', () => {
+    // Built the same way `main.ts` builds it, which is also what proves the
+    // document can be built at all with a union response schema in it — that
+    // failure would take the whole API's boot with it, not just this path.
+    const document = buildOpenApiDocument(app.instance());
+
+    expect(document.paths?.['/agent/ui']?.post).toBeDefined();
   });
 });
