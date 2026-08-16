@@ -94,11 +94,10 @@ already gone.
 `GET /api/links/:id/telemetry?window=5m` and `GET /api/fleet/summary` are the
 two remaining reads the API promises, and both go through `TelemetryPort`
 rather than the repository — the repository only ever answers "does this Link
-exist", never "what has it reported". Until the Simulator lands, the answer
-both endpoints give is the honest one for a fleet that has never reported: an
+exist", never "what has it reported". For a fleet that has never reported, the answer
+both endpoints give is the honest one: an
 empty history, and a Summary where every Link is `down`, every total is zero,
-and `worstLinkId` is `null`. Pinning that now is what makes the next slice's
-arrival of real Samples a visible change rather than a silent one.
+and `worstLinkId` is `null`.
 
 **The Summary is server-authoritative, and the Console never aggregates it.**
 `FleetController` renders `TelemetryPort.summary()` verbatim — no counting,
@@ -257,8 +256,8 @@ identical requests return an identical result. An unknown `sort` key or `dir`
 value is rejected as `400` `VALIDATION_FAILED`, the same as any other
 malformed query, rather than silently ignored.
 
-Every seeded Link reads `down: stale` until the Simulator lands, so
-`?status=down` returns the whole fleet in this slice — asserted
+A seeded Link reads `down: stale` until the Simulator produces its first Sample, so
+`?status=down` initially returns the whole fleet — asserted
 deliberately, not a gap.
 
 ```json
@@ -281,8 +280,8 @@ deliberately, not a gap.
 ]
 ```
 
-Every Link reads `down: stale` until the Simulator lands — no Telemetry
-Sample has ever been produced yet, and that is the correct answer, not a
+Every newly seeded Link reads `down: stale` until its first Telemetry
+Sample is produced, and that is the correct answer for a link without data, not a
 limitation.
 
 ### `GET /api/links/:id`
@@ -311,7 +310,7 @@ request, so drill-down never costs two round trips.
 }
 ```
 
-`latestSample` is `null` until the Simulator lands — same honest answer as
+`latestSample` is `null` before the first Sample arrives — same honest answer as
 `status: down, reason: stale`, for the same reason. An unknown id returns
 `404` with the error envelope below.
 
@@ -436,8 +435,7 @@ sparkline draws from.
 []
 ```
 
-Every seeded Link returns an empty array in this slice, since no Sample has
-ever been produced — the same honest answer as `status: down, reason: stale`
+Before the Simulator produces its first Sample, a seeded Link returns an empty array in this slice — the same honest answer as `status: down, reason: stale`
 on `GET /api/links`. A `window` that does not match the pattern above returns
 `400` `VALIDATION_FAILED` naming `window` as the offending field. An unknown
 Link id returns `404` `LINK_NOT_FOUND`, checked against the repository —
@@ -459,8 +457,8 @@ computed once by `server/telemetry` and never recomputed by a client.
 }
 ```
 
-Every seeded Link counts as `down` and `worstLinkId` is `null` in this slice,
-for the same reason every Link reads `down: stale` on `GET /api/links` — no
+Before the first Sample arrives, every seeded Link counts as `down` and `worstLinkId` is `null` in this slice,
+for the same reason every newly seeded Link reads `down: stale` on `GET /api/links` — no
 Link has ever produced a Sample. `worstLinkId` selects the lowest `snrDb`
 among Links that currently have a Sample, ties broken on the lowest `id`;
 Links with no Sample yet are excluded from the selection entirely rather than
