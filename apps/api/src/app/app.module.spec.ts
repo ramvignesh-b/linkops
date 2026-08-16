@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import type { SchemaObject } from '@nestjs/swagger/dist/interfaces/open-api-spec.interface';
 import {
   linkDeletedEventSchema,
   linkSchema,
@@ -205,5 +206,25 @@ describe('the Assistant endpoint under the application-wide pipe and filter', ()
     const document = buildOpenApiDocument(app.instance());
 
     expect(document.paths?.['/agent/ui']?.post).toBeDefined();
+  });
+
+  it('documents the Action as part of the shared request schema', () => {
+    const document = buildOpenApiDocument(app.instance());
+    const ref = document.paths?.['/agent/ui']?.post?.requestBody as {
+      content: { 'application/json': { schema: { $ref: string } } };
+    };
+    const schemaName = ref.content['application/json'].schema.$ref
+      .split('/')
+      .pop();
+    const schema = document.components?.schemas?.[schemaName as string] as {
+      oneOf: SchemaObject[];
+    };
+    const act = schema.oneOf.find(
+      (arm) => arm.properties?.['kind']?.enum?.[0] === 'act',
+    );
+
+    expect(Object.keys(act?.properties ?? {}).sort()).toEqual(
+      ['kind', 'surfaceId', 'componentId', 'event', 'data'].sort(),
+    );
   });
 });

@@ -209,3 +209,114 @@ describe('POST /agent/ui', () => {
     expect(components).toHaveLength(ids.size);
   });
 });
+
+/**
+ * An Action against the offer's one Button, overridable per test — the
+ * `surfaceId`, `componentId` and `event` a real Console would send are
+ * fixed, only `data` and the occasional refusal case vary.
+ */
+function actionBody(
+  data: Record<string, unknown>,
+  overrides: Partial<{ surfaceId: string }> = {},
+): Record<string, unknown> {
+  return {
+    kind: 'act',
+    surfaceId: 'triage',
+    componentId: 'recommend',
+    event: 'recommend',
+    data,
+    ...overrides,
+  };
+}
+
+describe('POST /agent/ui — the round trip', () => {
+  const server = useServer();
+
+  it('answers the confirmation Surface, naming the Link and the Remediation chosen and carrying both readings', async () => {
+    const [, degraded] = server.roster();
+    server.report(degraded, 'degraded');
+
+    const action = await request(server.http())
+      .post('/agent/ui')
+      .send(actionBody({ linkId: degraded.id, remediation: 'narrow-channel' }));
+
+    expect(action.status).toBe(200);
+    const { components } = surfaceOf(action.body);
+    const byId = (id: string) => components.find((one) => one.id === id);
+
+    expect(byId('intro')?.['text']).toContain(degraded.name);
+    expect(byId('intro')?.['text']).toContain('Narrow the Channel Width');
+    expect(byId('snr')?.component).toBe('Metric');
+    expect(byId('snr')?.['value']).toContain('dB');
+    expect(byId('throughput')?.component).toBe('Metric');
+    expect(byId('throughput')?.['value']).toContain('Mbps');
+  });
+
+  it('uses every one of the six whitelisted component types across the offer and the confirmation', async () => {
+    const [, degraded] = server.roster();
+    server.report(degraded, 'degraded');
+
+    const offer = await request(server.http())
+      .post('/agent/ui')
+      .send({ kind: 'open' });
+    const action = await request(server.http())
+      .post('/agent/ui')
+      .send(actionBody({ linkId: degraded.id, remediation: 'narrow-channel' }));
+
+    const typesUsed = new Set([
+      ...surfaceOf(offer.body).components.map((one) => one.component),
+      ...surfaceOf(action.body).components.map((one) => one.component),
+    ]);
+
+    expect([...typesUsed].sort()).toEqual(
+      ['Button', 'Card', 'Metric', 'Select', 'Surface', 'Text'].sort(),
+    );
+  });
+
+  it('answers the same Action against the same Fleet with byte-identical bodies, twice', async () => {
+    const [, degraded] = server.roster();
+    server.report(degraded, 'degraded');
+    const body = actionBody({
+      linkId: degraded.id,
+      remediation: 'raise-tx-power',
+    });
+
+    const first = await request(server.http()).post('/agent/ui').send(body);
+    const second = await request(server.http()).post('/agent/ui').send(body);
+
+    expect(second.text).toBe(first.text);
+  });
+
+  it('never mutates the Link the Action names', async () => {
+    const [, degraded] = server.roster();
+    server.report(degraded, 'degraded');
+
+    await request(server.http())
+      .post('/agent/ui')
+      .send(actionBody({ linkId: degraded.id, remediation: 'narrow-channel' }));
+
+    const unchanged = server
+      .roster()
+      .find((record) => record.id === degraded.id);
+    expect(unchanged).toEqual(degraded);
+  });
+
+  it('refuses an Action naming a Surface it does not recognise, with the closed unusable-payload code', async () => {
+    const response = await request(server.http())
+      .post('/agent/ui')
+      .send(actionBody({}, { surfaceId: 'not-a-real-surface' }));
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('A2UI_INVALID_PAYLOAD');
+    expect(response.body.error.details.reason).toEqual(expect.any(String));
+  });
+
+  it('refuses an Action naming a Link or Remediation the Fleet does not have', async () => {
+    const response = await request(server.http())
+      .post('/agent/ui')
+      .send(actionBody({ linkId: 'lnk_9999', remediation: 'narrow-channel' }));
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('A2UI_INVALID_PAYLOAD');
+  });
+});
