@@ -112,6 +112,16 @@ function expectHistoryWindow(
   return request;
 }
 
+function pointCount(path: string | null): number {
+  if (!path) return 0;
+  return path.match(/[ML]/g)?.length ?? 0;
+}
+
+function subpathCount(path: string | null): number {
+  if (!path) return 0;
+  return path.match(/M/g)?.length ?? 0;
+}
+
 describe('one Link in detail, its latest Sample, and telemetry history', () => {
   it('renders the full configuration and the latest Sample from the Server', async () => {
     const { fixture, http } = await bootConsole('/links/lnk_alpha');
@@ -211,25 +221,38 @@ describe('one Link in detail, its latest Sample, and telemetry history', () => {
     await fixture.whenStable();
 
     // One point, from the store — not an empty chart waiting on the next Tick.
-    expect(view.sparklinePath()?.match(/[ML]/g)?.length).toBe(1);
+    expect(pointCount(view.sparklinePath())).toBe(1);
 
     finish();
   });
 
-  it('navigates from fleet list, dedupes overlapping history, draws gaps as breaks, caps at 300, and refetches on re-entry', async () => {
-    const { fixture, http, router, stream } = await bootConsole('/links');
+  it('navigates from the fleet list to link detail on row click', async () => {
+    const { fixture, http, router } = await bootConsole('/links');
     answerFirstPaint(http, [alpha, bravo], summary());
     await fixture.whenStable();
 
     const view = screen(fixture);
     expect(view.rowNames()).toEqual(['Alpha Ridge', 'Bravo Pass']);
 
-    // Clicking the row navigates to the detail route /links/lnk_alpha
     view.clickLinkRow(ALPHA);
     await fixture.whenStable();
     expect(router.url).toBe('/links/lnk_alpha');
 
-    // Entering the view reads the Link and history over REST
+    http
+      .expectOne('/api/links/lnk_alpha')
+      .flush({ link: alpha, latestSample: null });
+    expectHistoryWindow(http, ALPHA).flush([]);
+    await fixture.whenStable();
+
+    expect(view.detailTitle()).toBe('Alpha Ridge');
+
+    finish();
+  });
+
+  it('deduplicates live telemetry samples overlapping with the initial history window', async () => {
+    const { fixture, http, stream } = await bootConsole('/links/lnk_alpha');
+    answerFirstPaint(http, [alpha, bravo], summary());
+
     const s0 = sample(ALPHA, '2026-08-16T10:00:00.000Z', 10);
     const s1 = sample(ALPHA, '2026-08-16T10:00:01.000Z', 20);
     const s2 = sample(ALPHA, '2026-08-16T10:00:02.000Z', 30);
@@ -241,12 +264,11 @@ describe('one Link in detail, its latest Sample, and telemetry history', () => {
     expectHistoryWindow(http, ALPHA).flush([s0, s1, s2, s3]);
     await fixture.whenStable();
 
+    const view = screen(fixture);
     expect(view.detailTitle()).toBe('Alpha Ridge');
-    let path = view.sparklinePath();
-    expect(path).not.toBeNull();
     // 4 samples -> 4 path points (1 M + 3 L)
-    expect(path?.match(/[ML]/g)?.length).toBe(4);
-    expect(path?.match(/M/g)?.length).toBe(1);
+    expect(pointCount(view.sparklinePath())).toBe(4);
+    expect(subpathCount(view.sparklinePath())).toBe(1);
 
     // Overlap deduplication: stream delivers s3 (same timestamp as in REST) + s4
     const s4 = sample(ALPHA, '2026-08-16T10:00:04.000Z', 50);
@@ -258,9 +280,27 @@ describe('one Link in detail, its latest Sample, and telemetry history', () => {
     stream().emit('fleet.summary', summary({ totalThroughputMbps: 50 }), 4);
     await fixture.whenStable();
 
-    path = view.sparklinePath();
     // s3 was deduplicated by timestamp: exactly 5 unique points (s0..s4)
-    expect(path?.match(/[ML]/g)?.length).toBe(5);
+    expect(pointCount(view.sparklinePath())).toBe(5);
+
+    finish();
+  });
+
+  it('draws a break in the sparkline path when consecutive samples cross the gap threshold', async () => {
+    const { fixture, http, stream } = await bootConsole('/links/lnk_alpha');
+    answerFirstPaint(http, [alpha, bravo], summary());
+
+    const s0 = sample(ALPHA, '2026-08-16T10:00:00.000Z', 10);
+    const s1 = sample(ALPHA, '2026-08-16T10:00:01.000Z', 20);
+
+    http
+      .expectOne('/api/links/lnk_alpha')
+      .flush({ link: alpha, latestSample: s1 });
+    expectHistoryWindow(http, ALPHA).flush([s0, s1]);
+    await fixture.whenStable();
+
+    const view = screen(fixture);
+    expect(subpathCount(view.sparklinePath())).toBe(1);
 
     // Gap handling: a 10-second gap (> 2000 ms) starts a new subpath with 'M'
     const s14 = sample(ALPHA, '2026-08-16T10:00:14.000Z', 70);
@@ -272,20 +312,56 @@ describe('one Link in detail, its latest Sample, and telemetry history', () => {
     stream().emit('fleet.summary', summary({ totalThroughputMbps: 70 }), 14);
     await fixture.whenStable();
 
-    path = view.sparklinePath();
-    // 6 points total, with more than one 'M' command indicating a visible break across the gap
-    expect(path?.match(/[ML]/g)?.length).toBe(6);
-    expect((path?.match(/M/g) ?? []).length).toBeGreaterThan(1);
+    // 3 points total, with more than one 'M' command indicating a visible break across the gap
+    expect(pointCount(view.sparklinePath())).toBe(3);
+    expect(subpathCount(view.sparklinePath())).toBeGreaterThan(1);
 
-    // Capping at 300: feed 350 samples through the stream
-    feedSamplesThroughStream(stream(), ALPHA, 350, 15);
+    finish();
+  });
+
+  it('caps the sparkline history buffer at 300 samples', async () => {
+    const { fixture, http, stream } = await bootConsole('/links/lnk_alpha');
+    answerFirstPaint(http, [alpha, bravo], summary());
+
+    const s0 = sample(ALPHA, '2026-08-16T10:00:00.000Z', 10);
+    http
+      .expectOne('/api/links/lnk_alpha')
+      .flush({ link: alpha, latestSample: s0 });
+    expectHistoryWindow(http, ALPHA).flush([s0]);
     await fixture.whenStable();
 
-    path = view.sparklinePath();
-    // Exactly 300 points retained in the sparkline path
-    expect(path?.match(/[ML]/g)?.length).toBe(300);
+    const view = screen(fixture);
 
-    // Re-entering the view refetches rather than reusing a stale cache
+    // Capping at 300: feed 350 samples through the stream
+    feedSamplesThroughStream(stream(), ALPHA, 350, 1);
+    await fixture.whenStable();
+
+    // Exactly 300 points retained in the sparkline path
+    expect(pointCount(view.sparklinePath())).toBe(300);
+
+    finish();
+  });
+
+  it('refetches link and history on route re-entry rather than reusing stale state', async () => {
+    const { fixture, http, router, stream } =
+      await bootConsole('/links/lnk_alpha');
+    answerFirstPaint(http, [alpha, bravo], summary());
+
+    const s0 = sample(ALPHA, '2026-08-16T10:00:00.000Z', 10);
+    http
+      .expectOne('/api/links/lnk_alpha')
+      .flush({ link: alpha, latestSample: s0 });
+    expectHistoryWindow(http, ALPHA).flush([s0]);
+    await fixture.whenStable();
+
+    // Feed samples so the route-scoped history accumulates points
+    feedSamplesThroughStream(stream(), ALPHA, 50, 1);
+    await fixture.whenStable();
+
+    const view = screen(fixture);
+    expect(pointCount(view.sparklinePath())).toBe(51);
+
+    // Re-entering the view refetches rather than reusing stale history
     await router.navigateByUrl('/links');
     await fixture.whenStable();
     expect(router.url).toBe('/links');
@@ -293,18 +369,17 @@ describe('one Link in detail, its latest Sample, and telemetry history', () => {
     await router.navigateByUrl('/links/lnk_alpha');
     await fixture.whenStable();
 
-    const freshSample = sample(ALPHA, '2026-08-16T10:10:00.000Z', 85);
+    const freshSample = sample(ALPHA, '2026-08-16T10:01:30.000Z', 85);
     http
       .expectOne('/api/links/lnk_alpha')
       .flush({ link: alpha, latestSample: freshSample });
     expectHistoryWindow(http, ALPHA).flush([freshSample]);
     await fixture.whenStable();
 
-    path = view.sparklinePath();
-    // Two points, not 301: the refetched window plus the Sample the store
-    // still holds from the last Tick. The 300 accumulated before navigating
+    // Two points, not 52: the refetched window plus the Sample the store
+    // still holds from the last Tick. The points accumulated before navigating
     // away went with the route-scoped `LinkHistory`.
-    expect(path?.match(/[ML]/g)?.length).toBe(2);
+    expect(pointCount(view.sparklinePath())).toBe(2);
 
     finish();
   });
