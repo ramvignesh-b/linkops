@@ -1,1 +1,67 @@
-/* You can add global styles to this file, and also import other style files */
+/*
+ * The Console's design tokens, and the only place a colour, a spacing or a
+ * type size is written as a value. Components reference these and never a
+ * literal — a hard-coded colour is how two surfaces that were meant to match
+ * stop matching, and `AGENTS.md` records the rule so a review can grep for it.
+ *
+ * One theme and no dark mode: two palettes double the surface every colour
+ * decision has to be right on, for a console that is one screen.
+ */
+:root {
+  /* Surface */
+  --surface-page: #f5f6f8;
+  --surface-raised: #ffffff;
+  --border: #d5dae1;
+  --divider: #ebeef2;
+
+  /* Text */
+  --text-primary: #16191d;
+  --text-muted: #5b6472;
+  --text-on-accent: #ffffff;
+
+  /*
+   * Status — three colours, never four. A `down` Link's reason (stale versus
+   * metrics) answers *why*, not *how bad*, so it is a label rather than a
+   * fourth colour: four colours would tell an operator there are four
+   * severities when there are three.
+   */
+  --status-up: #17794c;
+  --status-degraded: #a35c00;
+  --status-down: #b3261e;
+  --accent: #1d4ed8;
+
+  /* Space — a four-step scale, used for every margin, padding and gap */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 32px;
+
+  /* Type */
+  --font-size-small: 12px;
+  --font-size-body: 14px;
+  --font-size-heading: 20px;
+  --font-weight-normal: 400;
+  --font-weight-strong: 600;
+
+  /* Shape */
+  --radius: 6px;
+  --focus-ring: 2px solid var(--accent);
+}
+
+body {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-normal);
+}
+
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}

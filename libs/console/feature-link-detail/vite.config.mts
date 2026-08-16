@@ -15,6 +15,11 @@ export default defineConfig(() => ({
   test: {
     name: 'console-feature-link-detail',
     watch: false,
+    // Every Console behaviour is asserted at the one agreed seam — the routed
+    // application in `apps/console`, driven through a faked wire — so this
+    // library holds no spec of its own. An empty run is the expected state,
+    // not a misconfiguration.
+    passWithNoTests: true,
     globals: true,
     environment: 'jsdom',
     include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],

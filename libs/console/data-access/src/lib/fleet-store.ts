@@ -1,0 +1,200 @@
+import { HttpClient } from '@angular/common/http';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import {
+  computed,
+  DestroyRef,
+  inject,
+  Injectable,
+  signal,
+} from '@angular/core';
+import { forkJoin } from 'rxjs';
+import type { FleetSummary, Link, StreamEvent } from '@linkops/shared/domain';
+import {
+  applyStreamEvent,
+  emptyFleetState,
+  type FleetState,
+} from './fleet-state';
+import { FleetStream, type StreamMessage } from './fleet-stream';
+
+/**
+ * What the Console knows about its own connection to the Server. `lastFrameAt`
+ * is a Server timestamp taken off the frame itself — the Console never reads
+ * its own clock, which is what keeps clock skew out of the freeze banner.
+ */
+export type ConnectionState =
+  | { kind: 'connecting' }
+  | { kind: 'live'; lastFrameAt: string }
+  | { kind: 'dropped'; lastFrameAt: string | null };
+
+/**
+ * The Fleet as the Console holds it: loaded over REST, then kept live by the
+ * stream, and frozen exactly where it stands if the stream goes.
+ *
+ * Two things it deliberately does not do. It does not derive Status — the
+ * Server's `status` is rendered unchanged, so a gap in the stream can never
+ * make the Console a second, disagreeing producer of health. And it does not
+ * aggregate the Summary — the Server's is rendered verbatim, so the KPI header
+ * cannot contradict the rows beneath it.
+ */
+@Injectable({ providedIn: 'root' })
+export class FleetStore {
+  private readonly http = inject(HttpClient);
+
+  private readonly state = signal<FleetState>(emptyFleetState);
+  private readonly connectionState = signal<ConnectionState>({
+    kind: 'connecting',
+  });
+
+  /** The Roster, Status as the Server derived it. */
+  readonly links = computed(() => this.state().links);
+  /** The latest Sample per Link, bounded by the size of the Fleet. */
+  readonly latestSample = computed(() => this.state().latestSample);
+  /** The Server's Fleet Summary, verbatim; `null` before the first arrives. */
+  readonly summary = computed(() => this.state().summary);
+  readonly connection = this.connectionState.asReadonly();
+
+  /**
+   * The Tick in progress. Events accumulate here and reach `state` only when
+   * the Tick's `fleet.summary` lands, which the Server's documented within-Tick
+   * ordering guarantees is last.
+   */
+  private pending: StreamEvent[] = [];
+
+  /** Set by the first frame that applies, and what makes first paint lose a race it should lose. */
+  private streamHasApplied = false;
+
+  constructor() {
+    const subscription = inject(FleetStream).subscribe((message) =>
+      this.receive(message),
+    );
+    inject(DestroyRef).onDestroy(() => subscription.close());
+
+    this.loadFirstPaint();
+  }
+
+  /**
+   * First paint over REST, before the stream has connected — because a Client
+   * whose `EventSource` is blocked should still see its Fleet, and because
+   * ADR-0005 makes the Snapshot the resync path rather than the load path.
+   *
+   * Both reads are issued together and applied as one write, so the header and
+   * the rows are from one moment here too. `GET /api/links` is called with **no
+   * query parameters**: the Console holds the whole Roster and filters it
+   * itself, since the stream delivers the whole Fleet and the Server cannot
+   * tell a filtered Client that something has entered its filter.
+   */
+  private loadFirstPaint(): void {
+    forkJoin({
+      links: this.http.get<Link[]>('/api/links'),
+      summary: this.http.get<FleetSummary>('/api/fleet/summary'),
+    })
+      .pipe(takeUntilDestroyed())
+      .subscribe({
+        next: ({ links, summary }) => {
+          // The stream can win this race on a fast connection, and its
+          // Snapshot is the newer state — first paint is what fills a screen
+          // that has nothing on it, never what replaces something live.
+          if (!this.streamHasApplied) {
+            this.state.set({ links, latestSample: new Map(), summary });
+          }
+        },
+        // A Transport Failure on the load path costs first paint and nothing
+        // else: the stream is the other way this state arrives, and its own
+        // failure is what raises a banner. Logged rather than rendered,
+        // because no operator action is owed a message here.
+        error: (cause: unknown) =>
+          console.warn('First paint over REST failed', cause),
+      });
+  }
+
+  private receive(message: StreamMessage): void {
+    switch (message.kind) {
+      case 'event':
+        this.receiveEvent(message.event);
+
+        return;
+
+      case 'failure':
+        // Freeze. Nothing on screen is cleared, no Status is recomputed, and no
+        // Link flips to `down` — an operator has to be able to tell *the Fleet
+        // died* from *my connection died*, and a Console that kept deriving
+        // would make those two situations look identical.
+        //
+        // The Tick in progress is the one thing that does go, because its
+        // lifetime is the connection's: left buffered, it would flush behind
+        // the recovering Snapshot and put a frame from before the gap on top
+        // of current state.
+        this.pending = [];
+        this.connectionState.set({
+          kind: 'dropped',
+          lastFrameAt: this.lastFrameAt(),
+        });
+
+        return;
+    }
+  }
+
+  private receiveEvent(event: StreamEvent): void {
+    if (event.event === 'fleet.snapshot') {
+      // It arrives alone and first on every connection, so there is no Tick to
+      // coalesce it into and nothing left buffered to discard here — a new
+      // connection is always preceded by the `error` that ended the last one,
+      // and that is where the Tick in progress was dropped.
+      this.apply([event], event.data.ts);
+
+      return;
+    }
+
+    this.pending.push(event);
+
+    if (event.event === 'fleet.summary') {
+      const tick = this.pending;
+      this.pending = [];
+      this.apply(tick, telemetryTimestamp(tick));
+    }
+  }
+
+  /**
+   * One Tick, applied as one write — the client-side mirror of ADR-0004's
+   * batching. Collapsing N Links into one frame on the wire buys nothing if
+   * the Console un-batches it into four state changes and four
+   * change-detection passes.
+   *
+   * A Tick that somehow carried no `fleet.summary` is not applied and not
+   * discarded: it stays buffered and the following Tick's Summary flushes both.
+   * The chosen degradation is a doubled batch rather than a frozen screen.
+   */
+  private apply(events: readonly StreamEvent[], frameAt: string | null): void {
+    this.state.set(events.reduce(applyStreamEvent, this.state()));
+    this.streamHasApplied = true;
+
+    // Without a Server timestamp there is nothing honest to name as the last
+    // good frame, so the previous one stands.
+    const lastFrameAt = frameAt ?? this.lastFrameAt();
+
+    if (lastFrameAt !== null) {
+      this.connectionState.set({ kind: 'live', lastFrameAt });
+    }
+  }
+
+  private lastFrameAt(): string | null {
+    const current = this.connectionState();
+
+    return current.kind === 'connecting' ? null : current.lastFrameAt;
+  }
+}
+
+/**
+ * When a Tick's readings were taken, as the Server timestamped them.
+ * `link.telemetry` is the only event in a Tick that carries a timestamp, and
+ * it is in every Tick.
+ */
+function telemetryTimestamp(events: readonly StreamEvent[]): string | null {
+  for (const event of events) {
+    if (event.event === 'link.telemetry') {
+      return event.data.ts;
+    }
+  }
+
+  return null;
+}
