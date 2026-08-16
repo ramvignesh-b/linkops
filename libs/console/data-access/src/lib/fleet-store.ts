@@ -190,8 +190,9 @@ export class FleetStore {
  * it is in every Tick.
  */
 function telemetryTimestamp(events: readonly StreamEvent[]): string | null {
-  for (const event of events) {
-    if (event.event === 'link.telemetry') {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event !== undefined && event.event === 'link.telemetry') {
       return event.data.ts;
     }
   }
