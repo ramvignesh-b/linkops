@@ -2,7 +2,7 @@ import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
 /**
- * What an operator sees when the stream drops, and the reason the freeze is
+ * What an operator sees when the stream drops, and the reason the stall is
  * safe to look at: it names how old the screen is instead of letting still
  * numbers speak for themselves. A Stall — the stream stopping while everything
  * still looks connected — is worse than a disconnect precisely because nothing

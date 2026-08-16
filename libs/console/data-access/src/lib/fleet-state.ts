@@ -9,7 +9,7 @@ import type {
 /**
  * Everything the Fleet screens read, held as one value so that a Tick applies
  * as a single write. Three signals updated one after another would be three
- * chances for the KPI header and the rows beneath it to be read a Tick apart.
+ * chances for the Summary header and the rows beneath it to be read a Tick apart.
  */
 export interface FleetState {
   /** The Roster, each Link carrying the Status the Server derived for it. */

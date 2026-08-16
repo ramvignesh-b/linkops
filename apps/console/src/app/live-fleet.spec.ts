@@ -106,7 +106,7 @@ describe('the live Fleet list', () => {
     // zero is a reading, and nobody has taken one yet.
     expect(view.throughput(ALPHA)).toBe('— / 100 Mbps');
     expect(view.heading()).toBe('Fleet-wide');
-    expect(view.kpi('Total throughput')).toBe('61 Mbps');
+    expect(view.summary('Total throughput')).toBe('61 Mbps');
 
     // The stream takes over: the Snapshot replaces that state wholesale.
     expect(stream().url).toBe('/api/stream');
@@ -136,11 +136,11 @@ describe('the live Fleet list', () => {
     expect(view.throughput(BRAVO)).toBe('3 / 400 Mbps');
     // The `down` reason is a label, not a fourth colour, and it answers *why*.
     expect(view.status(BRAVO)).toBe('down · poor signal');
-    expect(view.kpi('Links')).toBe('2');
-    expect(view.kpi('Up')).toBe('1');
-    expect(view.kpi('Degraded')).toBe('0');
-    expect(view.kpi('Down')).toBe('1');
-    expect(view.kpi('Total throughput')).toBe('45 Mbps');
+    expect(view.summary('Links')).toBe('2');
+    expect(view.summary('Up')).toBe('1');
+    expect(view.summary('Degraded')).toBe('0');
+    expect(view.summary('Down')).toBe('1');
+    expect(view.summary('Total throughput')).toBe('45 Mbps');
     expect(view.worstLinkHref()).toBe('/links/lnk_bravo');
 
     // A Tick whose `fleet.summary` has not landed yet changes nothing on
@@ -213,9 +213,9 @@ describe('the live Fleet list', () => {
     expect(view.throughput(CHARLIE)).toBe('30 / 200 Mbps');
     // Rendered as the Server derived it — the Console never derives Status.
     expect(view.status(BRAVO)).toBe('degraded');
-    expect(view.kpi('Links')).toBe('3');
-    expect(view.kpi('Up')).toBe('2');
-    expect(view.kpi('Total throughput')).toBe('225 Mbps');
+    expect(view.summary('Links')).toBe('3');
+    expect(view.summary('Up')).toBe('2');
+    expect(view.summary('Total throughput')).toBe('225 Mbps');
 
     // Nothing invents a connection problem while frames are arriving.
     expect(view.banner()).toBeNull();
@@ -276,9 +276,9 @@ describe('the live Fleet list', () => {
     // and *my connection died* have to stay two different screens.
     expect(view.status(ALPHA)).toBe('up');
     expect(view.status(BRAVO)).toBe('degraded');
-    expect(view.kpi('Down')).toBe('0');
+    expect(view.summary('Down')).toBe('0');
     // The header freezes with the rows, so the two still agree.
-    expect(view.kpi('Total throughput')).toBe('252 Mbps');
+    expect(view.summary('Total throughput')).toBe('252 Mbps');
 
     // The banner names the time of the last good frame — the Server's own
     // timestamp, exact on the element and local time in the words.
@@ -318,8 +318,8 @@ describe('the live Fleet list', () => {
     expect(view.rowIds()).toEqual(['lnk_bravo', 'lnk_charlie']);
     expect(view.throughput(BRAVO)).toBe('300 / 400 Mbps');
     expect(view.status(BRAVO)).toBe('up');
-    expect(view.kpi('Links')).toBe('2');
-    expect(view.kpi('Total throughput')).toBe('315 Mbps');
+    expect(view.summary('Links')).toBe('2');
+    expect(view.summary('Total throughput')).toBe('315 Mbps');
     expect(view.worstLinkHref()).toBe('/links/lnk_charlie');
 
     // And the Tick that was half-arrived when the connection went does not

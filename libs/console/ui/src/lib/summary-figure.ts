@@ -2,11 +2,11 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
 /** One figure from the Fleet Summary, with the word for what it counts. */
 @Component({
-  selector: 'lib-kpi-tile',
+  selector: 'lib-summary-figure-tile',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <span class="kpi-label">{{ label() }}</span>
-    <span class="kpi-value">{{ value() }}</span>
+    <span class="summary-label">{{ label() }}</span>
+    <span class="summary-value">{{ value() }}</span>
   `,
   styles: `
     :host {
@@ -20,12 +20,12 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       min-width: 96px;
     }
 
-    .kpi-label {
+    .summary-label {
       color: var(--text-muted);
       font-size: var(--font-size-small);
     }
 
-    .kpi-value {
+    .summary-value {
       font-family: var(--font-family-mono);
       font-size: var(--font-size-heading);
       font-weight: var(--font-weight-strong);
@@ -33,7 +33,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
     }
   `,
 })
-export class KpiTile {
+export class SummaryFigureTile {
   readonly label = input.required<string>();
   readonly value = input.required<string | number>();
 }

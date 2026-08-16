@@ -107,9 +107,9 @@ describe('filtering and sorting the Fleet, with the URL as the state', () => {
     const view = screen(fixture);
     // Only the Link matching the URL's filter is on screen.
     expect(view.rowIds()).toEqual([ALPHA]);
-    // The KPI header still describes the whole Fleet — a filter can never
+    // The Summary header still describes the whole Fleet — a filter can never
     // hide a Link from the counts above the list.
-    expect(view.kpi('Links')).toBe('3');
+    expect(view.summary('Links')).toBe('3');
 
     // Clearing the Band filter reveals the rest of the Fleet, ordered by
     // Capacity descending as the URL's `sort`/`dir` still say.
