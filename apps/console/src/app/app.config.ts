@@ -3,7 +3,7 @@ import {
   type ApplicationConfig,
   provideBrowserGlobalErrorListeners,
 } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withComponentInputBinding } from '@angular/router';
 import {
   EVENT_SOURCE,
   type EventSourceLike,
@@ -13,7 +13,10 @@ import { appRoutes } from './app.routes';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideRouter(appRoutes),
+    // withComponentInputBinding makes the query string the state for filter
+    // and sort: FleetPage reads it as component inputs rather than a
+    // subscription it has to keep in step with the URL by hand.
+    provideRouter(appRoutes, withComponentInputBinding()),
     provideHttpClient(),
     {
       // The real stream. Reconnection is the browser's, driven by the
