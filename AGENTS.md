@@ -27,6 +27,14 @@ Single-context — one `CONTEXT.md` and one `docs/adr/` at the repo root. See `d
 
 `CONTEXT.md` is the glossary and exists now — read it before naming anything. `docs/adr/` holds ADRs 0001–0007; where an ADR and a planning document disagree, the ADR wins.
 
+### Console component conventions
+
+Three rules lint cannot express. Everything else about an Angular component here is already enforced: `inject()` over constructor injection, `OnPush` change detection, and standalone components are all lint errors when violated, and the component generator writes `OnPush` by default.
+
+- **Templates and styles are inline.** A component's template is read alongside its class far more often than on its own, and splitting a list row across three files costs a file switch on every read. Set as generator defaults in `nx.json` (`inlineTemplate`, `inlineStyle`) rather than by a rule, because no lint rule requires it — which is why it is written here, where a standards review can check it.
+- **One component per route injects state.** A feature library's routed component is the only one that reads a store; everything beneath it takes inputs and emits outputs. The boundary rules already stop `console/ui` reaching a data-access library at all; this extends the same discipline inside a feature library, where the tag axes cannot reach.
+- **Components reference design tokens, never literal colours or spacings.** Tokens are defined in exactly one place, `apps/console/src/styles.css`, and arrive with the first Console surface that needs them. A hard-coded colour is how three views that were meant to match stop matching, and it is the one design regression that is trivial to grep for.
+
 ### Documentation voice
 
 **Committed artifacts** — `CONTEXT.md`, `docs/adr/`, `docs/decisions/`, and all source and comments — justify every decision in product and engineering terms. No milestone or bonus ids (`M4`, `B2`), no "the brief", no "the reviewer", no section numbers from the assignment's README structure. Cross-reference our own documents by name ("the README's API reference"), not by number.
