@@ -2,26 +2,64 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   inject,
+  input,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { FleetStore } from '@linkops/console/data-access';
-import { KpiTile, StatusPill, ThroughputBar } from '@linkops/console/ui';
-import type { LinkId } from '@linkops/shared/domain';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { applyListQuery, FleetStore } from '@linkops/console/data-access';
+import {
+  FleetFilterBar,
+  KpiTile,
+  StatusPill,
+  ThroughputBar,
+} from '@linkops/console/ui';
+import {
+  linkListQuerySchema,
+  type Band,
+  type LinkId,
+  type LinkListQuery,
+  type LinkSortKey,
+  type LinkStatusKind,
+  type SortDir,
+} from '@linkops/shared/domain';
+
+/** The `LinkListQuery` fields a control can change, one key at a time. */
+type QueryPatch = Partial<{
+  status: LinkStatusKind | null;
+  band: Band | null;
+  q: string | null;
+  sort: LinkSortKey;
+  dir: SortDir;
+}>;
+
+/** The defaults every field falls back to — an empty query string, parsed. */
+const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
 
 /**
  * The Fleet, every Link on one screen: its name, its two Sites, its Band, the
  * Status the Server derived for it, and its Throughput against the Capacity it
- * is provisioned for.
+ * is provisioned for — narrowed and ordered by the query string.
  *
- * The one component on this route that reads the store; everything it renders
- * with takes inputs and reaches nothing. It renders the Summary verbatim and
- * the Status unchanged — no counting, no thresholds, and no clock.
+ * The one component on this route that reads the store or the router; the
+ * filter bar beneath it takes inputs and emits outputs, and everything else it
+ * renders with takes inputs and reaches nothing. It renders the Summary
+ * verbatim and the Status unchanged — no counting, no thresholds, and no
+ * clock — and the Summary describes the whole Fleet regardless of the filter,
+ * so a filter can never hide a `down` Link from the counts above it.
+ *
+ * Filter and sort parameters arrive as component inputs bound by the router,
+ * not a subscription this component has to keep in step by hand, and they are
+ * re-parsed with the same `linkListQuerySchema` the Server's validation pipe
+ * runs — the same vocabulary on both sides of the wire. A query string that
+ * fails to parse — a mistyped `status`, an unknown `sort` key — is not an
+ * operator's mistake to be shown an error for: it falls back to the defaults
+ * and the URL is rewritten to match, silently.
  */
 @Component({
   selector: 'lib-fleet-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [KpiTile, RouterLink, StatusPill, ThroughputBar],
+  imports: [FleetFilterBar, KpiTile, RouterLink, StatusPill, ThroughputBar],
   template: `
     <section class="kpi">
       <!--
@@ -53,6 +91,19 @@ import type { LinkId } from '@linkops/shared/domain';
       }
     </section>
 
+    <lib-fleet-filter-bar
+      [status]="query().status"
+      [band]="query().band"
+      [q]="query().q"
+      [sort]="query().sort"
+      [dir]="query().dir"
+      (statusChange)="updateQuery({ status: $event })"
+      (bandChange)="updateQuery({ band: $event })"
+      (qChange)="updateQuery({ q: $event })"
+      (sortChange)="updateQuery({ sort: $event })"
+      (dirChange)="updateQuery({ dir: $event })"
+    />
+
     <table>
       <thead>
         <tr>
@@ -64,7 +115,7 @@ import type { LinkId } from '@linkops/shared/domain';
         </tr>
       </thead>
       <tbody>
-        @for (link of links(); track link.id) {
+        @for (link of visibleLinks(); track link.id) {
           <tr [attr.data-link-id]="link.id">
             <td class="cell-name">{{ link.name }}</td>
             <td class="cell-sites">
@@ -85,7 +136,7 @@ import type { LinkId } from '@linkops/shared/domain';
           </tr>
         } @empty {
           <tr>
-            <td class="empty" colspan="5">No Links in the Fleet.</td>
+            <td class="empty" colspan="5">No Links match this filter.</td>
           </tr>
         }
       </tbody>
@@ -191,10 +242,44 @@ import type { LinkId } from '@linkops/shared/domain';
 })
 export class FleetPage {
   private readonly store = inject(FleetStore);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+
+  // Bound by the router (withComponentInputBinding), one input per query
+  // parameter — raw strings, undefined when absent. Named to match the query
+  // string exactly, which is what the binding matches inputs against.
+  readonly status = input<string>();
+  readonly band = input<string>();
+  readonly q = input<string>();
+  readonly sort = input<string>();
+  readonly dir = input<string>();
 
   protected readonly links = this.store.links;
   protected readonly summary = this.store.summary;
   private readonly latestSample = this.store.latestSample;
+
+  /**
+   * The query string, parsed with the same schema the Server's validation
+   * pipe runs. An unparseable query — a mistyped `status`, an unknown `sort`
+   * key — is not rendered as an error: it resolves to the defaults here, and
+   * the `effect` below rewrites the URL to match.
+   */
+  protected readonly query = computed<LinkListQuery>(() => {
+    const parsed = linkListQuerySchema.safeParse({
+      status: this.status(),
+      band: this.band(),
+      q: this.q(),
+      sort: this.sort(),
+      dir: this.dir(),
+    });
+
+    return parsed.success ? parsed.data : DEFAULT_QUERY;
+  });
+
+  /** Filtered and sorted over the store — a later Tick moves a Link into or out of this with no refetch. */
+  protected readonly visibleLinks = computed(() =>
+    applyListQuery(this.links(), this.latestSample(), this.query()),
+  );
 
   /** Formatted, not computed: the figure itself is the Server's. */
   protected readonly totalThroughput = computed(() => {
@@ -210,6 +295,10 @@ export class FleetPage {
    * cannot act on is decoration. It falls back to the id when the Summary names
    * a Link the Roster has not caught up with — the Summary is never a source of
    * membership, so this is a real state rather than an inconsistency.
+   *
+   * Read off the whole Roster, never the filtered view: the worst Link in the
+   * Fleet does not stop being the worst Link because the current filter hides
+   * it.
    */
   protected readonly worstLink = computed(() => {
     const worstLinkId = this.summary()?.worstLinkId ?? null;
@@ -223,7 +312,41 @@ export class FleetPage {
     return { id: worstLinkId, name: link?.name ?? worstLinkId };
   });
 
+  constructor() {
+    // An unparseable query string rewrites the URL rather than rendering an
+    // error — a mistyped address is not a failure the operator took an action
+    // to cause, and it is the one deliberate exception to this Console
+    // surfacing every failure. `replaceUrl` keeps the broken address off the
+    // back stack, since it was never a state worth returning to.
+    effect(() => {
+      const raw = {
+        status: this.status(),
+        band: this.band(),
+        q: this.q(),
+        sort: this.sort(),
+        dir: this.dir(),
+      };
+
+      if (!linkListQuerySchema.safeParse(raw).success) {
+        this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: {},
+          replaceUrl: true,
+        });
+      }
+    });
+  }
+
   protected throughputOf(linkId: LinkId): number | null {
     return this.latestSample().get(linkId)?.throughputMbps ?? null;
+  }
+
+  /** One control changed: merged into the query string, which is the state. */
+  protected updateQuery(patch: QueryPatch): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: patch,
+      queryParamsHandling: 'merge',
+    });
   }
 }

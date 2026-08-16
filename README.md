@@ -56,6 +56,24 @@ needs them — refetching on every sort change would fight the stream that is
 keeping the Console's store live. Both are correct; this reference documents
 the server's behaviour without implying the Console exercises it.
 
+**The Console's own copy of these words lives in its URL.** `/links` reads
+`status`, `band`, `q`, `sort` and `dir` straight off the query string —
+parsed with `linkListQuerySchema`, the same schema `LinkListQueryDto` wraps
+for the Server's validation pipe — so a Console URL and the equivalent `curl`
+to `GET /api/links` use the same vocabulary, and copying the address bar is
+enough to send a colleague the same view. `sortLinks` moved out of
+`server/links-api` into `shared/domain` for exactly this reason: the Console
+sorts its own filtered list with the identical function the Server sorts the
+Roster with, ties included, rather than a second comparator that could drift
+from the first one edit at a time. Filtering and sorting are derived over the
+store with a `computed`, so a Link that transitions to `degraded` on a later
+Tick enters a `degraded`-only view immediately — no refetch, because there was
+never a request to repeat. A query string the schema cannot parse — a
+mistyped `status`, an unknown `sort` key — is not treated as an operator
+error: it resolves to the defaults and the URL is rewritten to match, silently,
+which is the one place this Console chooses not to surface a failure, because
+a bad address is not an action the operator took.
+
 ### Deleting a Link
 
 A Link together with its `version` is the unit of concurrent modification;
@@ -168,15 +186,15 @@ because it answers *why*, not *how bad*.
 
 | Library | Owns |
 |---|---|
-| `libs/shared/domain` | The wire schemas (`Link`, `TelemetrySample`, `FleetSummary`), the branded `LinkId`, `deriveStatus` — the one function in the system entitled to an opinion about what "good" is — and the error vocabulary (`ApiErrorBody`, the `code` union, `FieldIssue`, `zodIssuesToFieldIssues`). Framework-free, one runtime dependency: zod. |
+| `libs/shared/domain` | The wire schemas (`Link`, `TelemetrySample`, `FleetSummary`), the branded `LinkId`, `deriveStatus` — the one function in the system entitled to an opinion about what "good" is — `linkListQuerySchema` and `sortLinks`, shared by the Server's `GET /api/links` and the Console's own filtered view, and the error vocabulary (`ApiErrorBody`, the `code` union, `FieldIssue`, `zodIssuesToFieldIssues`). Framework-free, one runtime dependency: zod. |
 | `libs/server/links-data-access` | `LinkRepository`, its in-memory implementation, and the ten-Link seed. Status is deliberately absent from the stored record — it is derived from Telemetry the repository has never seen. |
 | `libs/server/telemetry` | The Simulator — one fleet-wide interval, never a timer per Link — the Sample store behind it, `TelemetryPort` as the read side, and `TelemetryBus`, which publishes one Tick to whoever is subscribed. |
 | `libs/server/links-api` | The HTTP surface — `GET /api/links`, `GET /api/links/:id`, `POST /api/links`, `PATCH /api/links/:id`, `DELETE /api/links/:id`, `GET /api/links/:id/telemetry`, `GET /api/fleet/summary` — the DTOs `createZodDto` generates from the shared schemas, the globally registered `nestjs-zod` validation pipe, and the one exception filter mapping domain errors onto the error envelope. |
 | `libs/server/stream-api` | `GET /api/stream`, the Tick-to-events pipeline every connection shares, and the subscriber count that makes release observable. |
 | `apps/api` | Module registration only. |
-| `libs/console/data-access` | The Console's wire and its state: the stream client behind the `EVENT_SOURCE` token, schema validation of every frame, the Tick coalescer, and `FleetStore` — the Roster, the latest Sample per Link, the Summary and the connection state, holding all three of the first as one value so a Tick applies as one write. `TransportFailure` lives here too. |
-| `libs/console/ui` | Presentational only, domain types in and events out, no store and no router: the Status pill, the Throughput-against-Capacity bar, the KPI tile and the connection banner. |
-| `libs/console/feature-fleet` | The `/links` route: the Fleet list and the Fleet-wide KPI header. The one component here that reads the store. |
+| `libs/console/data-access` | The Console's wire and its state: the stream client behind the `EVENT_SOURCE` token, schema validation of every frame, the Tick coalescer, and `FleetStore` — the Roster, the latest Sample per Link, the Summary and the connection state, holding all three of the first as one value so a Tick applies as one write. `TransportFailure` and `applyListQuery` — the Console's filter-and-sort over the store — live here too. |
+| `libs/console/ui` | Presentational only, domain types in and events out, no store and no router: the Status pill, the Throughput-against-Capacity bar, the KPI tile, the connection banner and the Fleet filter bar. |
+| `libs/console/feature-fleet` | The `/links` route: the Fleet list, the Fleet-wide KPI header and the filter/sort controls above it. The one component here that reads the store or the router — filter and sort parameters arrive as router-bound inputs, parsed against the query string with `linkListQuerySchema`. |
 | `libs/console/feature-link-detail`, `libs/console/feature-assistant` | Empty, and named ahead of the slices that fill them. |
 | `apps/console` | The shell, the routes, the providers — including the real `EventSource` factory — and the integration tests that drive the routed Console with only the browser's two network primitives faked. |
 

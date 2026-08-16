@@ -1,76 +1,16 @@
 import {
-  HttpTestingController,
-  provideHttpClientTesting,
-} from '@angular/common/http/testing';
-import { type ComponentFixture, TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
-import {
-  EVENT_SOURCE,
-  STREAM_REOPEN_DELAY_MS,
-  type EventSourceLike,
-} from '@linkops/console/data-access';
-import {
   toLinkId,
   type FleetSummary,
   type Link,
-  type StreamEventName,
   type TelemetrySample,
 } from '@linkops/shared/domain';
-import { App } from './app';
-import { appConfig } from './app.config';
-
-/**
- * The stream, faked at the one place the Console touches the browser's
- * network primitives. It exists because **jsdom has no `EventSource`** —
- * without the `EVENT_SOURCE` token these tests could not run at all — and it
- * emits synchronously, which is why no test here waits on the clock.
- */
-class FakeEventSource implements EventSourceLike {
-  private readonly listeners = new Map<
-    string,
-    ((event: MessageEvent<string>) => void)[]
-  >();
-
-  closed = false;
-
-  /** OPEN, until a test says the browser is retrying (0) or has given up (2). */
-  readyState = 1;
-
-  constructor(readonly url: string) {}
-
-  addEventListener(
-    type: string,
-    listener: (event: MessageEvent<string>) => void,
-  ): void {
-    const existing = this.listeners.get(type) ?? [];
-    this.listeners.set(type, [...existing, listener]);
-  }
-
-  close(): void {
-    this.closed = true;
-  }
-
-  /** One frame as the Server writes it: a named event, JSON data, the Tick as `id:`. */
-  emit(event: StreamEventName, data: unknown, tick: number): void {
-    this.emitRaw(event, JSON.stringify(data), tick);
-  }
-
-  emitRaw(event: string, data: string, tick = 0): void {
-    const message = new MessageEvent<string>(event, {
-      data,
-      lastEventId: String(tick),
-    });
-
-    for (const listener of this.listeners.get(event) ?? []) {
-      listener(message);
-    }
-  }
-
-  /** What the browser dispatches when the connection goes. */
-  fail(): void {
-    this.emitRaw('error', '');
-  }
-}
+import {
+  answerFirstPaint,
+  bootConsole,
+  finish,
+  nextMacrotask,
+  screen,
+} from './testing/console-harness';
 
 const AT = {
   load: '2026-08-16T10:00:00.000Z',
@@ -81,16 +21,6 @@ const AT = {
   tick61: '2026-08-16T10:01:01.000Z',
   tick70: '2026-08-16T10:01:10.000Z',
 } as const;
-
-/**
- * Yields to the macrotask queue, which is where the reopen was scheduled. Not a
- * sleep: with the delay at zero the reopen is already queued ahead of this, so
- * FIFO ordering — not elapsed time — is what makes it deterministic.
- */
-const nextMacrotask = () =>
-  new Promise((resolve) => {
-    setTimeout(resolve, 0);
-  });
 
 const ALPHA = toLinkId('lnk_alpha');
 const BRAVO = toLinkId('lnk_bravo');
@@ -152,121 +82,6 @@ function summary(overrides: Partial<FleetSummary> = {}): FleetSummary {
     worstLinkId: null,
     ...overrides,
   };
-}
-
-/**
- * The routed Console, booted from the application's own provider list with
- * only the two browser network primitives replaced. Everything between the
- * wire and the DOM — schema validation, the store and its Tick coalescer,
- * the router, `console/ui` — is the code that ships.
- */
-async function bootConsole(): Promise<{
-  fixture: ComponentFixture<App>;
-  http: HttpTestingController;
-  stream: () => FakeEventSource;
-}> {
-  const sources: FakeEventSource[] = [];
-
-  TestBed.configureTestingModule({
-    providers: [
-      ...appConfig.providers,
-      provideHttpClientTesting(),
-      // The reopen cadence is the Server's 3 seconds in the application; here
-      // it is the next macrotask, so the test waits on ordering rather than on
-      // the clock.
-      { provide: STREAM_REOPEN_DELAY_MS, useValue: 0 },
-      {
-        provide: EVENT_SOURCE,
-        useValue: (url: string): EventSourceLike => {
-          const source = new FakeEventSource(url);
-          sources.push(source);
-
-          return source;
-        },
-      },
-    ],
-  });
-
-  const fixture = TestBed.createComponent(App);
-  await TestBed.inject(Router).navigate(['/links']);
-  await fixture.whenStable();
-
-  return {
-    fixture,
-    http: TestBed.inject(HttpTestingController),
-    stream: () => {
-      const source = sources[sources.length - 1];
-      if (source === undefined) throw new Error('the stream was never opened');
-
-      return source;
-    },
-  };
-}
-
-/** First paint: the Roster and the Fleet Summary, together and unfiltered. */
-function answerFirstPaint(
-  http: HttpTestingController,
-  links: Link[],
-  fleetSummary: FleetSummary,
-): void {
-  const roster = http.expectOne((request) => request.url === '/api/links');
-  // No query parameters: the Console loads the whole Roster and filters it
-  // itself, so a Link entering a filtered view mid-Tick needs no refetch.
-  expect(roster.request.urlWithParams).toBe('/api/links');
-  roster.flush(links);
-  http.expectOne('/api/fleet/summary').flush(fleetSummary);
-}
-
-const screen = (fixture: ComponentFixture<App>) => {
-  const root = fixture.nativeElement as HTMLElement;
-
-  const row = (id: Link['id']): HTMLElement => {
-    const found = root.querySelector<HTMLElement>(`tr[data-link-id="${id}"]`);
-    if (found === null) throw new Error(`no row for ${id}`);
-
-    return found;
-  };
-
-  const text = (element: Element | null): string =>
-    (element?.textContent ?? '').replace(/\s+/g, ' ').trim();
-
-  return {
-    rowNames: () =>
-      [...root.querySelectorAll('tbody .cell-name')].map((cell) => text(cell)),
-    rowIds: () =>
-      [...root.querySelectorAll<HTMLElement>('tbody tr')].map(
-        (tr) => tr.dataset['linkId'],
-      ),
-    status: (id: Link['id']) => text(row(id).querySelector('lib-status-pill')),
-    throughput: (id: Link['id']) =>
-      text(row(id).querySelector('lib-throughput-bar')),
-    cell: (id: Link['id'], name: string) =>
-      text(row(id).querySelector(`.cell-${name}`)),
-    kpi: (label: string) => {
-      const tile = [...root.querySelectorAll('lib-kpi-tile')].find(
-        (candidate) => text(candidate.querySelector('.kpi-label')) === label,
-      );
-
-      return text(tile?.querySelector('.kpi-value') ?? null);
-    },
-    worstLinkHref: () =>
-      root.querySelector('.worst-link a')?.getAttribute('href') ?? null,
-    banner: () => root.querySelector<HTMLElement>('lib-connection-banner p'),
-    heading: () => text(root.querySelector('.kpi h2')),
-  };
-};
-
-/**
- * Ends a test the way closing the Console ends the application: nothing left
- * unanswered, then the environment torn down. Tearing it down is what fires the
- * store's `DestroyRef` — a root-provided store outlives every component, so
- * destroying a fixture is not what releases its stream.
- */
-function finish(): void {
-  // Nothing polls: every Tick after first paint arrives over the stream, so an
-  // unexpected request here is a regression rather than an oversight.
-  TestBed.inject(HttpTestingController).verify();
-  TestBed.resetTestingModule();
 }
 
 describe('the live Fleet list', () => {
