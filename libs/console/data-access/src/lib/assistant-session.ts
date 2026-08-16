@@ -1,5 +1,5 @@
 import { inject, Injectable, signal } from '@angular/core';
-import type { Subscription } from 'rxjs';
+import type { Observable, Subscription } from 'rxjs';
 import type {
   A2uiActionRequest,
   A2uiCreateSurface,
@@ -38,35 +38,34 @@ export class AssistantSession {
    */
   private inFlight: Subscription | undefined;
 
-  /** Opens a conversation. Cancels any reply still in flight from a previous one. */
+  /**
+   * Opens a conversation. Cancels any reply still in flight from a previous
+   * one, and drops whatever the last conversation left onscreen: a reopen
+   * starts from nothing, so there is no earlier Surface to keep.
+   */
   open(): void {
-    this.inFlight?.unsubscribe();
-
-    this.pending.set(true);
-    this.failure.set(null);
     this.surface.set(null);
-
-    this.inFlight = this.client.open().subscribe({
-      next: (surface) => {
-        this.pending.set(false);
-        this.surface.set(surface);
-      },
-      error: (cause: unknown) => {
-        this.pending.set(false);
-        this.failure.set(failureFrom(cause));
-      },
-    });
+    this.run(this.client.open());
   }
 
-  /** Sends an Action to the Assistant. Cancels any reply still in flight. */
+  /**
+   * Sends an Action to the Assistant. Cancels any reply still in flight — the
+   * last press wins — and leaves the current Surface up until one arrives to
+   * replace it. Clearing here would cost the operator the offer they acted on
+   * the moment the round trip failed, leaving "Try again" nothing to try.
+   */
   act(request: A2uiActionRequest): void {
+    this.run(this.client.act(request));
+  }
+
+  /** The request lifecycle both entry points share, minus what they render from. */
+  private run(reply: Observable<A2uiCreateSurface>): void {
     this.inFlight?.unsubscribe();
 
     this.pending.set(true);
     this.failure.set(null);
-    this.surface.set(null);
 
-    this.inFlight = this.client.act(request).subscribe({
+    this.inFlight = reply.subscribe({
       next: (surface) => {
         this.pending.set(false);
         this.surface.set(surface);

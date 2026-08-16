@@ -16,6 +16,7 @@ const AT = {
 
 const ALPHA = toLinkId('lnk_alpha');
 const BRAVO = toLinkId('lnk_bravo');
+const CHARLIE = toLinkId('lnk_charlie');
 
 function link(overrides: Partial<Link> & Pick<Link, 'id' | 'name'>): Link {
   return {
@@ -44,6 +45,11 @@ const bravo = link({
   name: 'Bravo Pass',
   status: { status: 'degraded' },
 });
+const charlie = link({
+  id: CHARLIE,
+  name: 'Charlie Gap',
+  status: { status: 'degraded' },
+});
 
 function summary(overrides: Partial<FleetSummary> = {}): FleetSummary {
   return {
@@ -57,8 +63,16 @@ function summary(overrides: Partial<FleetSummary> = {}): FleetSummary {
   };
 }
 
-/** The Surface the real stub would answer for a Fleet with Bravo Pass degraded. */
-function triageEnvelope() {
+/**
+ * The Surface the real stub would answer for a Fleet with degraded Links: one
+ * option per Link needing attention, so a Fleet with two of them offers the
+ * operator a choice of which to triage.
+ */
+function triageEnvelope(
+  linkOptions: { value: string; label: string }[] = [
+    { value: 'lnk_bravo', label: 'Bravo Pass' },
+  ],
+) {
   return {
     version: 'v1.0',
     createSurface: {
@@ -82,7 +96,7 @@ function triageEnvelope() {
           component: 'Select',
           label: 'Link',
           value: { path: '/linkId' },
-          options: [{ value: 'lnk_bravo', label: 'Bravo Pass' }],
+          options: linkOptions,
         },
         {
           id: 'remediation',
@@ -443,23 +457,40 @@ describe('the triage panel', () => {
 
   it('round-trips a remediation: the operator picks, presses the button, and the confirmation replaces the offer', async () => {
     const { fixture, http } = await bootConsole();
-    answerFirstPaint(http, [alpha, bravo], summary());
+    answerFirstPaint(
+      http,
+      [alpha, bravo, charlie],
+      summary({ total: 3, degraded: 2 }),
+    );
     await fixture.whenStable();
 
     const view = screen(fixture);
 
-    // Open the panel and flush the triage offer.
+    // Open the panel and flush a triage offer naming both degraded Links, so
+    // which one the operator picks is a real choice rather than a foregone one.
     view.askAssistant();
     await fixture.whenStable();
 
-    http.expectOne('/api/agent/ui').flush(triageEnvelope());
+    http.expectOne('/api/agent/ui').flush(
+      triageEnvelope([
+        { value: 'lnk_bravo', label: 'Bravo Pass' },
+        { value: 'lnk_charlie', label: 'Charlie Gap' },
+      ]),
+    );
     await fixture.whenStable();
 
     // The offer is rendered: verify the initial state.
     expect(view.assistantCardTitle()).toBe('Triage');
     expect(view.assistantButtonLabel()).toBe('Show the recommendation');
+    expect(view.assistantSelectOptions('link')).toEqual([
+      'Bravo Pass',
+      'Charlie Gap',
+    ]);
 
-    // The operator picks a different remediation.
+    // The operator picks in both pickers — a Link other than the one the offer
+    // was seeded with, and a different remediation.
+    view.setAssistantSelect('link', 'lnk_charlie');
+    await fixture.whenStable();
     view.setAssistantSelect('remediation', 'raise-tx-power');
     await fixture.whenStable();
 
@@ -479,7 +510,7 @@ describe('the triage panel', () => {
       surfaceId: 'triage',
       componentId: 'recommend',
       event: 'recommend',
-      data: { linkId: 'lnk_bravo', remediation: 'raise-tx-power' },
+      data: { linkId: 'lnk_charlie', remediation: 'raise-tx-power' },
     });
 
     // The Server answers with the confirmation Surface — naming the Link and
@@ -499,7 +530,7 @@ describe('the triage panel', () => {
           {
             id: 'intro',
             component: 'Text',
-            text: 'Bravo Pass: Raise Tx Power — more margin, within the licensed limit',
+            text: 'Charlie Gap: Raise Tx Power — more margin, within the licensed limit',
           },
           { id: 'snr', component: 'Metric', label: 'SNR', value: '12 dB' },
           {
@@ -516,7 +547,7 @@ describe('the triage panel', () => {
     // The confirmation Surface replaces the offer.
     expect(view.assistantCardTitle()).toBe('Triage');
     expect(view.assistantTexts()).toEqual([
-      'Bravo Pass: Raise Tx Power — more margin, within the licensed limit',
+      'Charlie Gap: Raise Tx Power — more margin, within the licensed limit',
     ]);
 
     // Both Metrics are rendered.
@@ -537,6 +568,58 @@ describe('the triage panel', () => {
     expect(
       (fixture.nativeElement as HTMLElement).querySelector('.a2ui-button'),
     ).toBeNull();
+
+    finish();
+  });
+
+  it('leaves the offer onscreen when an Action fails, so the operator can press again', async () => {
+    const { fixture, http } = await bootConsole();
+    answerFirstPaint(http, [alpha, bravo], summary());
+    await fixture.whenStable();
+
+    const view = screen(fixture);
+    view.askAssistant();
+    await fixture.whenStable();
+
+    http.expectOne('/api/agent/ui').flush(triageEnvelope());
+    await fixture.whenStable();
+
+    view.setAssistantSelect('remediation', 'raise-tx-power');
+    await fixture.whenStable();
+
+    (fixture.nativeElement as HTMLElement)
+      .querySelector<HTMLElement>('.a2ui-button')
+      ?.click();
+    await fixture.whenStable();
+
+    // The Server never answers.
+    http
+      .expectOne('/api/agent/ui')
+      .error(new ProgressEvent('error'), { status: 0 });
+    await fixture.whenStable();
+
+    // The operator is told, and the offer they were working on is still there
+    // — a failed round trip costs them the panel's state, otherwise, and
+    // "Try again" has nothing left to try.
+    expect(view.assistantFailureText()).toBe(
+      'The assistant did not answer. Try again.',
+    );
+    expect(view.assistantCardTitle()).toBe('Triage');
+    expect(view.assistantButtonLabel()).toBe('Show the recommendation');
+
+    // Including the remediation they had picked.
+    (fixture.nativeElement as HTMLElement)
+      .querySelector<HTMLElement>('.a2ui-button')
+      ?.click();
+    await fixture.whenStable();
+
+    expect(http.expectOne('/api/agent/ui').request.body).toEqual({
+      kind: 'act',
+      surfaceId: 'triage',
+      componentId: 'recommend',
+      event: 'recommend',
+      data: { linkId: 'lnk_bravo', remediation: 'raise-tx-power' },
+    });
 
     finish();
   });

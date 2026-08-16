@@ -194,17 +194,25 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
         @if (assistantOpen()) {
           <section class="assistant-panel">
             @defer (on immediate) {
+              @if (assistant.failure(); as failure) {
+                <p class="assistant-failure">
+                  {{ assistantFailureMessage(failure) }}
+                </p>
+              }
+              @if (assistant.pending()) {
+                <p class="assistant-pending">Asking the assistant…</p>
+              }
+              <!--
+                Last, and independent of both: an Action keeps the Surface it
+                was raised from onscreen until the reply replaces it, so a
+                failed round trip shows the message above this offer rather
+                than instead of it.
+              -->
               @if (assistant.surface(); as surface) {
                 <lib-a2ui-surface
                   [surface]="surface"
                   (action)="onAssistantAction($event)"
                 />
-              } @else if (assistant.failure(); as failure) {
-                <p class="assistant-failure">
-                  {{ assistantFailureMessage(failure) }}
-                </p>
-              } @else {
-                <p class="assistant-pending">Asking the assistant…</p>
               }
             } @placeholder {
               <p class="assistant-pending">Loading the assistant…</p>
