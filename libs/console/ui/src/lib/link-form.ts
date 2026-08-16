@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   input,
   output,
   signal,
@@ -14,6 +15,7 @@ import {
   type Band,
   type ChannelWidthMhz,
   type FieldIssue,
+  type Link,
   type LinkCreate,
   type Mode,
 } from '@linkops/shared/domain';
@@ -21,12 +23,36 @@ import { issueFor } from './field-issue-lookup';
 
 /**
  * What the form is for, as a discriminated union rather than an `isEdit`
- * boolean: the `create` variant has no `version` and no conflict path, and
- * the type says so rather than an optional field a create caller has to
- * remember to leave out. Only `create` is exercised until the editing slice
- * adds `edit`.
+ * boolean: the `create` variant has no Link behind it, and `edit` carries the
+ * Link it pre-fills from, so the type says which is true rather than an
+ * optional field a caller has to remember to leave out or supply. `edit`
+ * carries the whole Link, not a `version` alongside a value, so the routed
+ * page's own state stays the one place a version is tracked — this only ever
+ * seeds the fields an operator can change.
  */
-export type LinkFormMode = { readonly kind: 'create' };
+export type LinkFormMode =
+  | { readonly kind: 'create' }
+  | { readonly kind: 'edit'; readonly link: Link };
+
+/**
+ * A Link's eight editable fields, the shape `linkCreateSchema` validates.
+ * Exported for the routed edit page, which needs the same extraction to seed
+ * a conflict's "mine" side when the Server never got the operator's own
+ * patch — a version conflict raised elsewhere, and "keep mine" resubmitting
+ * an unmodified value both take this path.
+ */
+export function toLinkCreate(link: Link): LinkCreate {
+  return {
+    name: link.name,
+    siteA: link.siteA,
+    siteB: link.siteB,
+    band: link.band,
+    mode: link.mode,
+    capacityMbps: link.capacityMbps,
+    txPowerDbm: link.txPowerDbm,
+    channelWidthMhz: link.channelWidthMhz,
+  };
+}
 
 const DEFAULT_VALUE: LinkCreate = {
   name: '',
@@ -264,10 +290,9 @@ export class LinkForm {
   /** A value that passed client-side validation, for the page to send. Never emitted for an invalid value. */
   readonly submitted = output<LinkCreate>();
 
-  // Seeded directly from the single `create` variant rather than through
-  // `this.mode()`: a required input cannot be read during construction
-  // (NG8118), and `initialValue` only has one case to give until `edit`
-  // lands, at which point deriving this from `mode` becomes an `effect`.
+  // Defaults to `create`'s starting value; `edit` re-seeds it below, in an
+  // `effect` rather than here, because a required input cannot be read
+  // during construction (NG8118).
   protected readonly value = signal<LinkCreate>(DEFAULT_VALUE);
   private readonly clientIssues = signal<readonly FieldIssue[]>([]);
 
@@ -279,8 +304,23 @@ export class LinkForm {
     switch (this.mode().kind) {
       case 'create':
         return this.pending() ? 'Creating…' : 'Create Link';
+      case 'edit':
+        return this.pending() ? 'Saving…' : 'Save changes';
     }
   });
+
+  constructor() {
+    // Re-seeds `value` whenever `mode` names a different Link to edit — the
+    // one seam "take theirs" resolves a conflict through: the routed page
+    // passes a fresh `edit` mode and this form repaints from it, with no
+    // event of its own needed for that one case.
+    effect(() => {
+      const mode = this.mode();
+      if (mode.kind === 'edit') {
+        this.value.set(toLinkCreate(mode.link));
+      }
+    });
+  }
 
   protected issueFor(path: string): string | null {
     // Client issues take precedence: they describe the value on screen right
