@@ -26,6 +26,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
     }
 
     .kpi-value {
+      font-family: var(--font-family-mono);
       font-size: var(--font-size-heading);
       font-weight: var(--font-weight-strong);
       font-variant-numeric: tabular-nums;
