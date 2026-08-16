@@ -111,6 +111,30 @@ _Avoid_: hang, freeze, lag
 A resource that outlives the thing that needed it — a stream subscription surviving its disconnected client, a simulator interval surviving shutdown, a ring buffer surviving its deleted Link, telemetry accumulating without bound. Named as a distinct concept because a console that runs alongside the device it manages is long-lived by definition: a leak has hours or days to become an outage, so "no leaks" is a claim that has to be *demonstrated*, not asserted.
 _Avoid_: memory issue, resource issue
 
+### The Assistant
+
+**Assistant**:
+The triage helper: it reads the Fleet, names the Links whose readings need attention, and suggests a Remediation for one of them. It **recommends and never writes** — no Assistant reply changes a Link, because an agent-authored payload on the write path to a live radio Link is exactly what the renderer's boundary exists to prevent. The operator applies the change through the Link form.
+_Avoid_: AI, bot, chat, copilot
+
+**Surface**:
+A screen's worth of UI described as a document by the Assistant, and rendered by components this Console owns. A Surface is the message, not the screen it lands on — "the Surface" never means the panel, the page or the viewport.
+_Avoid_: view, screen, panel, page
+
+**A2UI Component**:
+One node of a Surface: an id, a type name, and its properties, referencing its children by id in a flat list. Distinct from an Angular component — the mapping from one to the other is the whitelist, and a type name outside that whitelist renders a labelled fallback rather than anything of its own.
+
+**Data Model**:
+The state a Surface's bindings read from and its controls write to, addressed by JSON Pointer. Reads and writes both go through the guarded pointer functions, which refuse any segment that reaches the prototype chain.
+_Avoid_: state, store, context
+
+**Action**:
+What the operator's use of a Surface sends back to the Assistant: the Surface it came from, the component that raised it, the event name, and the Data Model values that event carries. The Assistant answers an Action with the next Surface.
+
+**Remediation**:
+A configuration change worth considering for a Link whose readings are poor — narrowing the Channel Width, raising Tx Power, moving to a lower Band. A Remediation is advice about a change, never the change itself.
+_Avoid_: fix, action, resolution
+
 ### Errors and Failures
 
 **Error Envelope**:

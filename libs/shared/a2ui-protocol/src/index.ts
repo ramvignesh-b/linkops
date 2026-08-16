@@ -1,1 +1,4 @@
-export * from './lib/shared-a2ui-protocol';
+export * from './lib/a2ui-component';
+export * from './lib/a2ui-envelope';
+export * from './lib/a2ui-request';
+export * from './lib/json-pointer';
