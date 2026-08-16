@@ -184,6 +184,20 @@ instead of a literal colour or spacing. Status has **three** colours, not four:
 a `down` Link's reason — *no telemetry* versus *poor signal* — is a label,
 because it answers *why*, not *how bad*.
 
+**What one Tick costs, measured rather than asserted.** The store apply above —
+coalescing's one write — is bracketed with `performance.mark`/`performance.measure`
+in `FleetStore`, behind `isDevMode()` so the sampler is never a per-Tick cost in
+production. Sixty Ticks (one minute of streaming) against the ten-Link seed
+fleet: **0.2 ms median, 0.3 ms p95**. Measured on `nx serve console` —
+development configuration, the only one `isDevMode()` ever lets the sampler run
+in — in headless Chrome 146.0.7680.164 on an Intel Core i5-9300H (8 threads). A
+production build drops the dev build's unminified code and Angular's extra
+dev-mode checks, so production should cost at most this, not more.
+
+**Bundle size**, the other number of this kind: `nx build console
+--configuration=production` reports an initial bundle of **616.33 kB raw,
+132.12 kB estimated transfer** (gzip).
+
 ### Where things live
 
 | Library | Owns |

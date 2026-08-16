@@ -5,6 +5,7 @@ import {
   DestroyRef,
   inject,
   Injectable,
+  isDevMode,
   signal,
 } from '@angular/core';
 import { forkJoin } from 'rxjs';
@@ -20,6 +21,25 @@ import {
   type FleetState,
 } from './fleet-state';
 import { FleetStream, type StreamMessage } from './fleet-stream';
+import { TickCostTracker } from './tick-cost-tracker';
+
+const TICK_APPLY_START_MARK = 'linkops:tick-apply-start';
+const TICK_APPLY_MEASURE = 'linkops:tick-apply';
+
+/**
+ * `isDevMode()` alone is not enough of a guard: this store also runs inside
+ * the console libraries' spec suites, whose jsdom does not implement the
+ * User Timing API at all — `performance.mark` is `undefined` there, real
+ * browsers and Node both have it. A measurement harness has no business
+ * throwing in an environment it was never meant to measure.
+ */
+function hasUserTimingApi(): boolean {
+  return (
+    typeof performance !== 'undefined' &&
+    typeof performance.mark === 'function' &&
+    typeof performance.measure === 'function'
+  );
+}
 
 /**
  * What the Console knows about its own connection to the Server. `lastFrameAt`
@@ -67,6 +87,14 @@ export class FleetStore {
 
   /** Set by the first frame that applies, and what makes first paint lose a race it should lose. */
   private streamHasApplied = false;
+
+  /**
+   * Dev-only: what one Tick costs this store, per ticket `36`. `isDevMode()`
+   * guards every call site below, so the marking and the tracking never run
+   * in production — a measurement harness that shipped would itself be a
+   * per-Tick cost.
+   */
+  private readonly tickCostTracker = new TickCostTracker();
 
   constructor() {
     const subscription = inject(FleetStream).subscribe((message) =>
@@ -187,7 +215,10 @@ export class FleetStore {
    * The chosen degradation is a doubled batch rather than a frozen screen.
    */
   private apply(events: readonly StreamEvent[], frameAt: string | null): void {
-    this.state.set(events.reduce(applyStreamEvent, this.state()));
+    this.applyAndTrackCost(() =>
+      this.state.set(events.reduce(applyStreamEvent, this.state())),
+    );
+
     this.streamHasApplied = true;
 
     // Without a Server timestamp there is nothing honest to name as the last
@@ -196,6 +227,37 @@ export class FleetStore {
 
     if (lastFrameAt !== null) {
       this.connectionState.set({ kind: 'live', lastFrameAt });
+    }
+  }
+
+  /**
+   * Runs `applyState` — the store write above — bracketed with
+   * `performance.mark`/`performance.measure` when both `isDevMode()` and the
+   * User Timing API say it is safe to. One `if`, not two either side of the
+   * write, and the one caller stays free of the bracketing detail.
+   */
+  private applyAndTrackCost(applyState: () => void): void {
+    if (!isDevMode() || !hasUserTimingApi()) {
+      applyState();
+
+      return;
+    }
+
+    performance.mark(TICK_APPLY_START_MARK);
+    applyState();
+    const { duration } = performance.measure(
+      TICK_APPLY_MEASURE,
+      TICK_APPLY_START_MARK,
+    );
+    performance.clearMarks(TICK_APPLY_START_MARK);
+    performance.clearMeasures(TICK_APPLY_MEASURE);
+
+    const stats = this.tickCostTracker.record(duration);
+
+    if (stats !== null) {
+      console.warn(
+        `[tick-cost] median ${stats.median.toFixed(2)}ms, p95 ${stats.p95.toFixed(2)}ms over 60 Ticks`,
+      );
     }
   }
 
