@@ -8,7 +8,12 @@ import {
   signal,
 } from '@angular/core';
 import { forkJoin } from 'rxjs';
-import type { FleetSummary, Link, StreamEvent } from '@linkops/shared/domain';
+import type {
+  FleetSummary,
+  Link,
+  LinkId,
+  StreamEvent,
+} from '@linkops/shared/domain';
 import {
   applyStreamEvent,
   emptyFleetState,
@@ -105,6 +110,23 @@ export class FleetStore {
         error: (cause: unknown) =>
           console.warn('First paint over REST failed', cause),
       });
+  }
+
+  /**
+   * Drops a Link from the view the moment its `DELETE` succeeds, rather than
+   * lingering until the `link.deleted` frame the Tick after confirms it.
+   * Applied through the same reducer that frame drives, so a delete acted on
+   * locally and the one the stream reports later can never disagree about
+   * what "idempotent" means — the frame arriving is then a Link already gone,
+   * and `applyStreamEvent`'s own filter is what makes that harmless.
+   */
+  removeLink(linkId: LinkId): void {
+    this.state.update((current) =>
+      applyStreamEvent(current, {
+        event: 'link.deleted',
+        data: { linkId },
+      }),
+    );
   }
 
   private receive(message: StreamMessage): void {

@@ -11,6 +11,16 @@ export const appRoutes: Route[] = [
     loadChildren: () =>
       import('@linkops/console/feature-fleet').then((m) => m.fleetRoutes),
   },
+  // Ahead of `links/:id`: a literal `edit` segment its own top-level route
+  // rather than a child of it, so `:id` binds directly (see
+  // `linkEditRoutes`'s own comment for why a child route can't).
+  {
+    path: 'links/:id/edit',
+    loadChildren: () =>
+      import('@linkops/console/feature-link-detail').then(
+        (m) => m.linkEditRoutes,
+      ),
+  },
   {
     path: 'links/:id',
     loadChildren: () =>

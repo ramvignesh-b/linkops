@@ -233,6 +233,63 @@ function linkCreateScreen(root: HTMLElement) {
           `lib-link-form .field[data-field="${field}"] .field-error`,
         ),
       ),
+    /** A form field's current value, for asserting a pre-filled edit form. */
+    formFieldValue: (name: string): string => formControl(root, name).value,
+  };
+}
+
+/** The `lib-link-conflict` diff and its two resolutions — grouped out of `screen` for the same reason as `linkDetailScreen`. */
+function linkConflictScreen(root: HTMLElement) {
+  return {
+    /** The `path`s of every field the diff renders as differing, in order. */
+    conflictFields: (): (string | undefined)[] =>
+      [
+        ...root.querySelectorAll<HTMLElement>(
+          'lib-link-conflict tr[data-field]',
+        ),
+      ].map((tr) => tr.dataset['field']),
+    /** One differing field's mine/theirs pair, or `null` if it is not shown as differing. */
+    conflictValues: (
+      field: string,
+    ): { mine: string; theirs: string } | null => {
+      const found = root.querySelector<HTMLElement>(
+        `lib-link-conflict tr[data-field="${field}"]`,
+      );
+      if (found === null) return null;
+
+      return {
+        mine: text(found.querySelector('.mine-value')),
+        theirs: text(found.querySelector('.theirs-value')),
+      };
+    },
+    clickTakeTheirs: (): void => {
+      root
+        .querySelector<HTMLElement>('lib-link-conflict .take-theirs')
+        ?.click();
+    },
+    clickKeepMine: (): void => {
+      root.querySelector<HTMLElement>('lib-link-conflict .keep-mine')?.click();
+    },
+  };
+}
+
+/** The Link detail route's edit and delete actions — grouped out of `screen` for the same reason as `linkDetailScreen`. */
+function linkEditAndDeleteScreen(root: HTMLElement) {
+  return {
+    clickEditLink: (): void => {
+      root.querySelector<HTMLElement>('.edit-action')?.click();
+    },
+    clickDelete: (): void => {
+      root.querySelector<HTMLElement>('.delete-action')?.click();
+    },
+    clickConfirmDelete: (): void => {
+      root.querySelector<HTMLElement>('.confirm-delete')?.click();
+    },
+    clickCancelDelete: (): void => {
+      root.querySelector<HTMLElement>('.cancel-delete')?.click();
+    },
+    deleteConfirmText: (): string =>
+      text(root.querySelector('.delete-confirm')),
   };
 }
 
@@ -289,6 +346,8 @@ export function screen(fixture: ComponentFixture<App>) {
 
     ...linkDetailScreen(root),
     ...linkCreateScreen(root),
+    ...linkConflictScreen(root),
+    ...linkEditAndDeleteScreen(root),
   };
 }
 

@@ -8,7 +8,8 @@ import {
   input,
   signal,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
+import type { Subscription } from 'rxjs';
 import { FleetStore } from '@linkops/console/data-access';
 import {
   FleetBreadcrumb,
@@ -80,6 +81,43 @@ import { HISTORY_WINDOW_MS, LinkHistory } from './link-history';
             <span class="site-arrow" aria-hidden="true"> → </span>
             <span class="site-to">{{ link.siteB }}</span>
           </p>
+          <div class="header-actions">
+            <a [routerLink]="['/links', link.id, 'edit']" class="edit-action"
+              >Edit</a
+            >
+            <button
+              type="button"
+              class="delete-action"
+              (click)="onDeleteClick()"
+            >
+              Delete
+            </button>
+          </div>
+          @if (confirmingDelete()) {
+            <div class="delete-confirm">
+              <p>Delete "{{ link.name }}"? This cannot be undone.</p>
+              @if (deleteUnreachable()) {
+                <p class="unreachable">
+                  The Server did not answer. Nothing was deleted — try again.
+                </p>
+              }
+              <button
+                type="button"
+                class="confirm-delete"
+                [disabled]="deleting()"
+                (click)="onConfirmDelete(link.id)"
+              >
+                {{ deleting() ? 'Deleting…' : 'Confirm delete' }}
+              </button>
+              <button
+                type="button"
+                class="cancel-delete"
+                (click)="onCancelDelete()"
+              >
+                Cancel
+              </button>
+            </div>
+          }
         </header>
 
         <div class="detail-grid">
@@ -219,6 +257,63 @@ import { HISTORY_WINDOW_MS, LinkHistory } from './link-history';
       color: var(--text-muted);
     }
 
+    .header-actions {
+      display: flex;
+      gap: var(--space-2);
+      margin-top: var(--space-2);
+    }
+
+    .edit-action {
+      color: var(--accent);
+      font-weight: var(--font-weight-medium);
+      text-decoration: none;
+    }
+
+    .edit-action:hover {
+      text-decoration: underline;
+    }
+
+    .delete-action {
+      padding: var(--space-1) var(--space-2);
+      background: transparent;
+      color: var(--status-down);
+      border: 1px solid var(--status-down);
+      border-radius: var(--radius);
+      cursor: pointer;
+    }
+
+    .delete-confirm {
+      margin-top: var(--space-2);
+      padding: var(--space-2);
+      background: var(--surface-raised);
+      border: 1px solid var(--status-down);
+      border-radius: var(--radius);
+    }
+
+    .delete-confirm p {
+      margin: 0 0 var(--space-2);
+    }
+
+    .delete-confirm .confirm-delete {
+      background: var(--status-down);
+      color: var(--surface-raised);
+      border: none;
+      border-radius: var(--radius);
+      padding: var(--space-1) var(--space-3);
+      font-weight: var(--font-weight-medium);
+      cursor: pointer;
+      margin-right: var(--space-2);
+    }
+
+    .delete-confirm .cancel-delete {
+      background: transparent;
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--space-1) var(--space-3);
+      cursor: pointer;
+    }
+
     .detail-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -299,6 +394,7 @@ export class LinkDetailPage {
   readonly id = input.required<string>();
 
   private readonly http = inject(HttpClient);
+  private readonly router = inject(Router);
   private readonly store = inject(FleetStore);
   protected readonly history = inject(LinkHistory);
 
@@ -366,6 +462,12 @@ export class LinkDetailPage {
     return s !== null ? s.throughputMbps : null;
   });
 
+  /** Named confirmation, per the ticket: revealed by "Delete", withdrawn by "Cancel". */
+  protected readonly confirmingDelete = signal(false);
+  protected readonly deleting = signal(false);
+  protected readonly deleteUnreachable = signal(false);
+  private deleteSubscription: Subscription | null = null;
+
   constructor() {
     effect(() => {
       const id = this.linkId();
@@ -402,5 +504,64 @@ export class LinkDetailPage {
           },
         });
     });
+  }
+
+  protected onDeleteClick(): void {
+    this.confirmingDelete.set(true);
+  }
+
+  /**
+   * Withdraws the confirmation and, if a delete is in flight, cancels it —
+   * unsubscribing an `HttpClient` request aborts it, so an operator who
+   * cancels never has that request land anyway and navigate them away once
+   * it settles.
+   */
+  protected onCancelDelete(): void {
+    this.deleteSubscription?.unsubscribe();
+    this.deleteSubscription = null;
+    this.confirmingDelete.set(false);
+    this.deleting.set(false);
+    this.deleteUnreachable.set(false);
+  }
+
+  /**
+   * Removes it from the store the moment the Server confirms it, rather than
+   * lingering until the membership event a Tick later — that frame arrives
+   * on a Link already gone, and `FleetStore.removeLink` is what makes that
+   * harmless. A 404 here means the same thing happened from somewhere else,
+   * so it is treated the same as success rather than surfaced as a failure.
+   */
+  protected onConfirmDelete(id: LinkId): void {
+    this.deleting.set(true);
+    this.deleteUnreachable.set(false);
+
+    this.deleteSubscription = this.http
+      .delete<void>(`/api/links/${id}`)
+      .subscribe({
+        next: () => {
+          this.deleteSubscription = null;
+          this.finishDelete(id);
+        },
+        error: (cause: unknown) => {
+          this.deleteSubscription = null;
+
+          const isNotFound =
+            cause instanceof HttpErrorResponse && cause.status === 404;
+
+          if (isNotFound) {
+            this.finishDelete(id);
+
+            return;
+          }
+
+          this.deleting.set(false);
+          this.deleteUnreachable.set(true);
+        },
+      });
+  }
+
+  private finishDelete(id: LinkId): void {
+    this.store.removeLink(id);
+    this.router.navigate(['/links']);
   }
 }
