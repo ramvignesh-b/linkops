@@ -5,8 +5,9 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import {
+  FleetBreadcrumb,
   LinkForm,
   operatorMessageFor,
   type LinkFormMode,
@@ -29,11 +30,9 @@ import {
 @Component({
   selector: 'lib-link-create-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [LinkForm, RouterLink],
+  imports: [FleetBreadcrumb, LinkForm],
   template: `
-    <nav class="breadcrumb">
-      <a routerLink="/links" class="back-link">← Fleet</a>
-    </nav>
+    <lib-fleet-breadcrumb />
 
     <h1>New Link</h1>
 
@@ -51,20 +50,6 @@ import {
     />
   `,
   styles: `
-    .breadcrumb {
-      margin-bottom: var(--space-2);
-    }
-
-    .back-link {
-      color: var(--accent);
-      font-weight: var(--font-weight-medium);
-      text-decoration: none;
-    }
-
-    .back-link:hover {
-      text-decoration: underline;
-    }
-
     h1 {
       margin: 0 0 var(--space-3);
       font-family: var(--font-family-heading);

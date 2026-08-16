@@ -10,7 +10,12 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { FleetStore } from '@linkops/console/data-access';
-import { Sparkline, StatusPill, ThroughputBar } from '@linkops/console/ui';
+import {
+  FleetBreadcrumb,
+  Sparkline,
+  StatusPill,
+  ThroughputBar,
+} from '@linkops/console/ui';
 import {
   toLinkId,
   type Link,
@@ -39,13 +44,11 @@ import { HISTORY_WINDOW_MS, LinkHistory } from './link-history';
 @Component({
   selector: 'lib-link-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Sparkline, StatusPill, ThroughputBar],
+  imports: [FleetBreadcrumb, RouterLink, Sparkline, StatusPill, ThroughputBar],
   providers: [LinkHistory],
   template: `
     <div class="detail-container">
-      <nav class="breadcrumb">
-        <a routerLink="/links" class="back-link">← Fleet</a>
-      </nav>
+      <lib-fleet-breadcrumb />
 
       @if (notFound()) {
         <div class="not-found">
@@ -171,11 +174,6 @@ import { HISTORY_WINDOW_MS, LinkHistory } from './link-history';
       gap: var(--space-3);
     }
 
-    .breadcrumb {
-      margin-bottom: var(--space-1);
-    }
-
-    .back-link,
     .return-link {
       display: inline-flex;
       align-items: center;
@@ -184,7 +182,6 @@ import { HISTORY_WINDOW_MS, LinkHistory } from './link-history';
       text-decoration: none;
     }
 
-    .back-link:hover,
     .return-link:hover {
       text-decoration: underline;
     }
