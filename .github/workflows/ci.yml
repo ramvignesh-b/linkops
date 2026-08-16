@@ -67,3 +67,22 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Report Bundle Size
+        if: always()
+        run: |
+          if [ -d "dist/apps/console/browser" ]; then
+            echo "### 📦 Console Bundle Observability" >> $GITHUB_STEP_SUMMARY
+            echo "| Asset | Raw Size | Gzip Transfer |" >> $GITHUB_STEP_SUMMARY
+            echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+            for f in dist/apps/console/browser/*.js dist/apps/console/browser/*.css; do
+              if [ -f "$f" ]; then
+                NAME=$(basename "$f")
+                RAW=$(ls -lh "$f" | awk '{print $5}')
+                GZIP=$(gzip -c "$f" | wc -c | awk '{printf "%.2f kB", $1/1024}')
+                echo "| \`$NAME\` | $RAW | $GZIP |" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Total Dist:** $(du -sh dist/apps/console/browser | awk '{print $1}')" >> $GITHUB_STEP_SUMMARY
+          fi
