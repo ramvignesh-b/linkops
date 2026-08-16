@@ -389,9 +389,9 @@ everything before it just produced.
 
 `link.created`, `link.updated`, `link.deleted` and `link.status` are
 **edge-triggered**: produced by a per-Tick diff of the Roster against the
-Tick before it, computed once regardless of how many clients are connected,
-and emitted only on the Tick a change is first seen — never repeated on the
-Tick after. A Link is `link.created` the Tick its id first appears — with
+Tick before it, computed once per Tick rather than once per connected
+client, and emitted only on the Tick a change is first seen — never
+repeated on the Tick after. A Link is `link.created` the Tick its id first appears — with
 `down: stale` and no Sample yet, if it was created between the Simulator's
 own Roster read and the diff's, the same thing `GET /api/links` would say
 about it at that instant. It is `link.updated` on a Tick its `version`
@@ -402,6 +402,18 @@ and no crash. `link.status` fires on a derived Status change and carries
 `previous`, the Status the diff just replaced, so a client can say "went
 degraded" rather than "is degraded" — computed exactly as `GET /api/links`
 computes it, never a second derivation path.
+
+**Every edge is relative to the `fleet.snapshot` you just received.** The
+diff's baseline is captured when a connection opens, not when the server
+booted, so the first `link.status` a client sees carries a `previous` its
+own Snapshot agrees with, and a client connecting to a fleet that has been
+running for an hour is told about the transitions that follow rather than
+the ones it missed. The same holds after a gap in which no client was
+connected at all: a link created during it arrives in the Snapshot rather
+than as `link.created`, and one deleted during it is simply absent. A
+console can drive toasts, alerts or an event log straight off these events
+without defending itself against transitions that never happened —
+see [ADR-0004](docs/adr/0004-batched-per-tick-sse-framing.md).
 
 **One message per Tick, not one per Link.** A fleet of ten produces two
 events a second, and a fleet of a thousand still produces two — see
