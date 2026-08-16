@@ -78,19 +78,13 @@ export class FleetEventStream {
 
   /**
    * The Roster as the last Tick's diff saw it, keyed by id — the baseline
-   * every new Tick compares against. Seeded from the Roster at construction
-   * time, before any Tick has run, so the Fleet a stream boots with is never
-   * mistaken for the Fleet a first Tick just created.
+   * every new Tick compares against. Empty until the diff starts running,
+   * which is the only moment it could be read.
    */
-  private previousRoster: Map<LinkId, LinkRecord>;
+  private previousRoster = new Map<LinkId, LinkRecord>();
 
-  /**
-   * Every Link's Status as of the last Tick's diff — the other half of the
-   * baseline. Seeded alongside `previousRoster` from whatever Sample exists
-   * at construction time (none, before the Simulator's first Tick), so
-   * `down: stale` is where every Link's transition history starts.
-   */
-  private previousStatuses: Map<LinkId, LinkStatus>;
+  /** Every Link's Status as of the last Tick's diff — the other half of the baseline. */
+  private previousStatuses = new Map<LinkId, LinkStatus>();
 
   constructor(
     @Inject(TELEMETRY_BUS) bus: TelemetryBus,
@@ -98,7 +92,38 @@ export class FleetEventStream {
     @Inject(LINK_REPOSITORY) private readonly repository: LinkRepository,
     @Inject(Simulator) private readonly simulator: Simulator,
   ) {
-    const now = this.clock.now();
+    // The Bus completing is the Fleet ending, and `takeUntil` is what carries
+    // that through to the heartbeat. Without it the merge would wait on an
+    // interval that never completes, and stopping the API would hang on a
+    // response that never ends instead of ending it cleanly.
+    const ended$ = bus.asObservable().pipe(ignoreElements(), endWith(true));
+
+    this.live$ = merge(
+      // `share()` below is ref-counted, so this Tick pipeline runs only while
+      // a Client is watching and is re-subscribed whenever the first one
+      // arrives. The baseline is therefore seeded *here*, on every such
+      // subscription, rather than at construction: a baseline older than the
+      // diff that reads it describes a Fleet no connected Client has ever
+      // been shown, and every Link whose Status moved in between would be
+      // announced as a transition on the first Tick after connecting.
+      defer(() => {
+        this.seedBaseline(this.clock.now());
+
+        return bus.asObservable();
+      }).pipe(concatMap((tick) => this.messagesFor(tick))),
+      interval(HEARTBEAT_MS).pipe(map((): MessageEvent => ({ comment: 'hb' }))),
+    ).pipe(takeUntil(ended$), share());
+  }
+
+  /**
+   * Replaces the baseline with the Fleet as it stands right now — the Roster
+   * and the Status every Link has at `now`, derived through the same
+   * presenter the Snapshot and the REST reads use. A Client subscribing gets
+   * its Snapshot from that same Fleet at that same instant, which is what
+   * makes the first transition it is told about one it could not have
+   * already seen.
+   */
+  private seedBaseline(now: Date): void {
     this.previousRoster = new Map(
       this.repository.findAll().map((record) => [record.id, record]),
     );
@@ -108,17 +133,6 @@ export class FleetEventStream {
         this.statusOf(record, now),
       ]),
     );
-
-    // The Bus completing is the Fleet ending, and `takeUntil` is what carries
-    // that through to the heartbeat. Without it the merge would wait on an
-    // interval that never completes, and stopping the API would hang on a
-    // response that never ends instead of ending it cleanly.
-    const ended$ = bus.asObservable().pipe(ignoreElements(), endWith(true));
-
-    this.live$ = merge(
-      bus.asObservable().pipe(concatMap((tick) => this.messagesFor(tick))),
-      interval(HEARTBEAT_MS).pipe(map((): MessageEvent => ({ comment: 'hb' }))),
-    ).pipe(takeUntil(ended$), share());
   }
 
   /**
@@ -177,7 +191,7 @@ export class FleetEventStream {
   /**
    * A Tick's events, in the order a Client may rely on: membership first —
    * `link.created`, `link.updated`, `link.deleted`, from a Roster diff run
-   * once per Tick regardless of how many Clients are connected — then the
+   * once per Tick rather than once per connected Client — then the
    * readings, then the Status transitions they explain, then the Summary
    * describing the state everything before it just produced. A Client is
    * therefore never handed a Sample for a Link it has not been told about,

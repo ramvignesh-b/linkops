@@ -3,11 +3,18 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import {
   fleetSnapshotSchema,
   fleetSummarySchema,
+  linkStatusEventSchema,
   linkTelemetryEventSchema,
   telemetrySampleSchema,
+  type LinkId,
+  type LinkStatus,
 } from '@linkops/shared/domain';
+import {
+  LINK_REPOSITORY,
+  type LinkRepository,
+} from '@linkops/server/links-data-access';
 import { SseSubscriberCounter } from './sse-subscriber-counter';
-import { SseTestClient, until } from './sse-client.fixture';
+import { SseTestClient, until, type StreamFrame } from './sse-client.fixture';
 import { ServerStreamApiModule } from './server-stream-api.module';
 
 /**
@@ -202,6 +209,131 @@ describe('a Client connecting', () => {
     expect(parsed.tick).toBe(0);
     expect(parsed.samples).toEqual([]);
     expect(snapshot.id).toBe('0');
+  });
+});
+
+/** The Status a Snapshot showed for each Link, keyed by id. */
+function statusesShownBy(snapshot: StreamFrame): Map<LinkId, LinkStatus> {
+  return new Map(
+    fleetSnapshotSchema
+      .parse(snapshot.data)
+      .links.map((link) => [link.id, link.status]),
+  );
+}
+
+/**
+ * Every transition this Client has been told about starts from the Status its
+ * Snapshot showed. A transition may genuinely land on the Tick after a Client
+ * connects — a Degradation Episode does not wait for anyone. What may never
+ * land is one starting from a Status the Client was never shown: the Snapshot
+ * is the state every edge after it is relative to (ADR-0005), so a `previous`
+ * the Snapshot contradicts describes a Fleet that never existed.
+ */
+function expectTransitionsToFollowOn(
+  client: SseTestClient,
+  shown: Map<LinkId, LinkStatus>,
+): void {
+  for (const frame of client.of('link.status')) {
+    const { linkId, previous } = linkStatusEventSchema.parse(frame.data);
+    expect(previous).toEqual(shown.get(linkId));
+  }
+}
+
+describe('a Client connecting to a Fleet already running', () => {
+  const server = useStreamingServer();
+
+  it('is told of no transition its Snapshot did not already show it', async () => {
+    tick(16);
+
+    const client = await server.connect();
+    const [snapshot] = await client.take(1);
+    const shown = statusesShownBy(snapshot);
+
+    tick(1);
+    await client.takeOfType('fleet.summary', 1);
+
+    expectTransitionsToFollowOn(client, shown);
+  });
+});
+
+describe('the first Client back after the Fleet was left unwatched', () => {
+  const server = useStreamingServer();
+
+  /**
+   * Leaves the Fleet Ticking with nothing subscribed to it, runs `during`
+   * against the Roster, then Ticks on — the window in which the shared Tick
+   * pipeline is torn down and whatever the last diff saw goes out of date.
+   */
+  async function whileUnwatched(
+    during: (repository: LinkRepository) => void,
+  ): Promise<void> {
+    const subscribers = server.module().get(SseSubscriberCounter);
+
+    const first = await server.connect();
+    await first.take(1);
+    tick(2);
+    await first.takeOfType('fleet.summary', 2);
+
+    first.disconnect();
+    await until(
+      () => subscribers.count === 0,
+      'the Fleet to be left unwatched',
+    );
+
+    during(server.module().get<LinkRepository>(LINK_REPOSITORY));
+    tick(20);
+  }
+
+  it('is told of no Link created while nobody was connected', async () => {
+    await whileUnwatched((repository) => {
+      const created = repository.create({
+        name: 'Relay to North Ridge',
+        siteA: 'Relay',
+        siteB: 'North Ridge',
+        band: '5GHz',
+        mode: 'PtP',
+        capacityMbps: 300,
+        txPowerDbm: 20,
+        channelWidthMhz: 40,
+      });
+      if (!created.ok) throw new Error('expected the Link to be created');
+    });
+
+    const client = await server.connect();
+    const [snapshot] = await client.take(1);
+    const shown = statusesShownBy(snapshot);
+    expect(shown.size).toBe(11);
+
+    tick(1);
+    await client.takeOfType('fleet.summary', 1);
+
+    // Its Snapshot already carries all eleven Links, so announcing the
+    // eleventh as `link.created` would be announcing a Fleet change this
+    // Client has no way to tell from a real one.
+    expect(client.of('link.created')).toEqual([]);
+    expectTransitionsToFollowOn(client, shown);
+  });
+
+  it('is told of no Link deleted while nobody was connected', async () => {
+    await whileUnwatched((repository) => {
+      const [doomed] = repository.findAll();
+      if (!repository.delete(doomed.id)) {
+        throw new Error('expected the Link to be deleted');
+      }
+    });
+
+    const client = await server.connect();
+    const [snapshot] = await client.take(1);
+    const shown = statusesShownBy(snapshot);
+    expect(shown.size).toBe(9);
+
+    tick(1);
+    await client.takeOfType('fleet.summary', 1);
+
+    // The deleted Link was never in this Client's Snapshot, so `link.deleted`
+    // would be the removal of something it was never shown.
+    expect(client.of('link.deleted')).toEqual([]);
+    expectTransitionsToFollowOn(client, shown);
   });
 });
 
