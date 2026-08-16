@@ -172,6 +172,19 @@ const control = (
   return found;
 };
 
+/** A field control on `lib-link-form`, found by its `name` attribute. */
+const formControl = (
+  root: HTMLElement,
+  name: string,
+): HTMLSelectElement | HTMLInputElement => {
+  const found = root.querySelector<HTMLSelectElement | HTMLInputElement>(
+    `lib-link-form [name="${name}"]`,
+  );
+  if (found === null) throw new Error(`no form control named ${name}`);
+
+  return found;
+};
+
 /** A `dt`/`dd` pair in the detail page's property lists, found by its label. */
 const property = (root: HTMLElement, label: string): string => {
   const found = [...root.querySelectorAll('.property-row')].find(
@@ -180,6 +193,48 @@ const property = (root: HTMLElement, label: string): string => {
 
   return text(found?.querySelector('dd') ?? null);
 };
+
+/** The Link detail route's queries — grouped out of `screen` to keep it inside the lint budget. */
+function linkDetailScreen(root: HTMLElement) {
+  return {
+    detailTitle: () => text(root.querySelector('.detail-header h1')),
+    detailValue: (label: string) => property(root, label),
+    sparklinePath: () =>
+      root.querySelector('svg path.sparkline-path')?.getAttribute('d') ?? null,
+    /** The Fleet row's name is the link into the detail route. */
+    clickLinkRow: (id: Link['id']) => {
+      row(root, id).querySelector('a')?.click();
+    },
+    notFoundText: () => text(root.querySelector('.not-found')),
+    unreachableText: () => text(root.querySelector('.unreachable')),
+  };
+}
+
+/** The Link create form's queries — grouped out of `screen` for the same reason as `linkDetailScreen`. */
+function linkCreateScreen(root: HTMLElement) {
+  return {
+    /** Sets a form field's value and dispatches the `change` `lib-link-form` listens for. */
+    setFormField: (name: string, value: string): void => {
+      const element = formControl(root, name);
+      element.value = value;
+      element.dispatchEvent(new Event('change'));
+    },
+    submitForm: (): void => {
+      root
+        .querySelector('lib-link-form form')
+        ?.dispatchEvent(
+          new Event('submit', { bubbles: true, cancelable: true }),
+        );
+    },
+    /** A field's error text, or empty when the control carries none. */
+    formFieldError: (field: string): string =>
+      text(
+        root.querySelector(
+          `lib-link-form .field[data-field="${field}"] .field-error`,
+        ),
+      ),
+  };
+}
 
 /**
  * DOM queries and control interactions, shared across every app-level test.
@@ -221,6 +276,9 @@ export function screen(fixture: ComponentFixture<App>) {
     },
     worstLinkHref: () =>
       root.querySelector('.worst-link a')?.getAttribute('href') ?? null,
+    clickNewLink: () => {
+      root.querySelector<HTMLElement>('.new-link-action')?.click();
+    },
     banner: () => root.querySelector<HTMLElement>('lib-connection-banner p'),
     heading: () => text(root.querySelector('.kpi h2')),
     setStatus: (value: string) => setControl('status', value),
@@ -229,17 +287,8 @@ export function screen(fixture: ComponentFixture<App>) {
     setSort: (value: string) => setControl('sort', value),
     setDir: (value: string) => setControl('dir', value),
 
-    // The Link detail route.
-    detailTitle: () => text(root.querySelector('.detail-header h1')),
-    detailValue: (label: string) => property(root, label),
-    sparklinePath: () =>
-      root.querySelector('svg path.sparkline-path')?.getAttribute('d') ?? null,
-    /** The Fleet row's name is the link into the detail route. */
-    clickLinkRow: (id: Link['id']) => {
-      row(root, id).querySelector('a')?.click();
-    },
-    notFoundText: () => text(root.querySelector('.not-found')),
-    unreachableText: () => text(root.querySelector('.unreachable')),
+    ...linkDetailScreen(root),
+    ...linkCreateScreen(root),
   };
 }
 
