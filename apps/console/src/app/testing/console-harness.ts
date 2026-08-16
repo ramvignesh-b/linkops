@@ -150,32 +150,50 @@ export function answerFirstPaint(
   http.expectOne('/api/fleet/summary').flush(fleetSummary);
 }
 
-/** DOM queries and control interactions, shared across every app-level test. */
+const text = (element: Element | null): string =>
+  (element?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+const row = (root: HTMLElement, id: Link['id']): HTMLElement => {
+  const found = root.querySelector<HTMLElement>(`tr[data-link-id="${id}"]`);
+  if (found === null) throw new Error(`no row for ${id}`);
+
+  return found;
+};
+
+const control = (
+  root: HTMLElement,
+  name: string,
+): HTMLSelectElement | HTMLInputElement => {
+  const found = root.querySelector<HTMLSelectElement | HTMLInputElement>(
+    `lib-fleet-filter-bar [name="${name}"]`,
+  );
+  if (found === null) throw new Error(`no control named ${name}`);
+
+  return found;
+};
+
+/** A `dt`/`dd` pair in the detail page's property lists, found by its label. */
+const property = (root: HTMLElement, label: string): string => {
+  const found = [...root.querySelectorAll('.property-row')].find(
+    (candidate) => text(candidate.querySelector('dt')) === label,
+  );
+
+  return text(found?.querySelector('dd') ?? null);
+};
+
+/**
+ * DOM queries and control interactions, shared across every app-level test.
+ *
+ * Its helpers sit outside it rather than closing over `root`, which is what
+ * keeps the returned object — one entry per thing a test asks the screen —
+ * inside the lint budget as surfaces are added.
+ */
 export function screen(fixture: ComponentFixture<App>) {
   const root = fixture.nativeElement as HTMLElement;
 
-  const row = (id: Link['id']): HTMLElement => {
-    const found = root.querySelector<HTMLElement>(`tr[data-link-id="${id}"]`);
-    if (found === null) throw new Error(`no row for ${id}`);
-
-    return found;
-  };
-
-  const text = (element: Element | null): string =>
-    (element?.textContent ?? '').replace(/\s+/g, ' ').trim();
-
-  const control = (name: string): HTMLSelectElement | HTMLInputElement => {
-    const found = root.querySelector<HTMLSelectElement | HTMLInputElement>(
-      `lib-fleet-filter-bar [name="${name}"]`,
-    );
-    if (found === null) throw new Error(`no control named ${name}`);
-
-    return found;
-  };
-
   /** Sets a control's value and dispatches the `change` the component listens for. */
   const setControl = (name: string, value: string): void => {
-    const element = control(name);
+    const element = control(root, name);
     element.value = value;
     element.dispatchEvent(new Event('change'));
   };
@@ -188,11 +206,12 @@ export function screen(fixture: ComponentFixture<App>) {
       [...root.querySelectorAll<HTMLElement>('tbody tr[data-link-id]')].map(
         (tr) => tr.dataset['linkId'],
       ),
-    status: (id: Link['id']) => text(row(id).querySelector('lib-status-pill')),
+    status: (id: Link['id']) =>
+      text(row(root, id).querySelector('lib-status-pill')),
     throughput: (id: Link['id']) =>
-      text(row(id).querySelector('lib-throughput-bar')),
+      text(row(root, id).querySelector('lib-throughput-bar')),
     cell: (id: Link['id'], name: string) =>
-      text(row(id).querySelector(`.cell-${name}`)),
+      text(row(root, id).querySelector(`.cell-${name}`)),
     kpi: (label: string) => {
       const tile = [...root.querySelectorAll('lib-kpi-tile')].find(
         (candidate) => text(candidate.querySelector('.kpi-label')) === label,
@@ -209,6 +228,18 @@ export function screen(fixture: ComponentFixture<App>) {
     setQuery: (value: string) => setControl('q', value),
     setSort: (value: string) => setControl('sort', value),
     setDir: (value: string) => setControl('dir', value),
+
+    // The Link detail route.
+    detailTitle: () => text(root.querySelector('.detail-header h1')),
+    detailValue: (label: string) => property(root, label),
+    sparklinePath: () =>
+      root.querySelector('svg path.sparkline-path')?.getAttribute('d') ?? null,
+    /** The Fleet row's name is the link into the detail route. */
+    clickLinkRow: (id: Link['id']) => {
+      row(root, id).querySelector('a')?.click();
+    },
+    notFoundText: () => text(root.querySelector('.not-found')),
+    unreachableText: () => text(root.querySelector('.unreachable')),
   };
 }
 

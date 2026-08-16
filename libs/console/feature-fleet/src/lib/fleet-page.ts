@@ -117,7 +117,9 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
       <tbody>
         @for (link of visibleLinks(); track link.id) {
           <tr [attr.data-link-id]="link.id">
-            <td class="cell-name">{{ link.name }}</td>
+            <td class="cell-name">
+              <a [routerLink]="['/links', link.id]">{{ link.name }}</a>
+            </td>
             <td class="cell-sites">
               <span class="site-from">{{ link.siteA }}</span>
               <span class="site-arrow" aria-hidden="true"> → </span>

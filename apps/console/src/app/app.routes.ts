@@ -11,4 +11,11 @@ export const appRoutes: Route[] = [
     loadChildren: () =>
       import('@linkops/console/feature-fleet').then((m) => m.fleetRoutes),
   },
+  {
+    path: 'links/:id',
+    loadChildren: () =>
+      import('@linkops/console/feature-link-detail').then(
+        (m) => m.linkDetailRoutes,
+      ),
+  },
 ];
