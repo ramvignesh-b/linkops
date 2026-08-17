@@ -37,3 +37,5 @@ allowBuilds:
   # Install-time analytics that reports back to a third party. Arrives through
   # the Nest packages and is not needed to run any of them.
   '@scarf/scarf': false
+  '@google/genai': true
+  protobufjs: true

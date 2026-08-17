@@ -9,7 +9,7 @@ export class EnvironmentValidationError extends Error {}
 
 /**
  * The prefix a near-miss variable name is caught by. Scoped to the
- * Assistant's own two variables rather than all four: `PORT` and
+ * Assistant's own two variables rather than all four: `API_PORT` and
  * `SWAGGER_UI_ENABLED` are common, standalone names with no sibling to be
  * typo'd against, so there is no near-miss failure mode for them to guard.
  */

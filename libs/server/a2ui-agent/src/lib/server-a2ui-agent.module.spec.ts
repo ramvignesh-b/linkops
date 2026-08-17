@@ -16,6 +16,8 @@ import type {
   LinkId,
   TelemetrySample,
 } from '@linkops/shared/domain';
+import { A2UI_AGENT } from './a2ui-agent.token';
+import { GeminiAgent } from './gemini-agent';
 import { ServerA2uiAgentModule } from './server-a2ui-agent.module';
 
 /** The reading a Link is currently giving, in the terms Status is derived in. */
@@ -63,6 +65,7 @@ function useServer(): {
   const telemetry = new FakeTelemetryPort();
 
   beforeEach(async () => {
+    vi.stubEnv('ASSISTANT_PROVIDER', 'stub');
     telemetry.samples.clear();
     const moduleRef = await Test.createTestingModule({
       imports: [ServerA2uiAgentModule],
@@ -77,6 +80,7 @@ function useServer(): {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await app.close();
   });
 
@@ -125,19 +129,27 @@ describe('the provider seam', () => {
     vi.unstubAllEnvs();
   });
 
-  it.each(['gemini', 'anthropic'] as const)(
-    'fails to boot when ASSISTANT_PROVIDER selects the unshipped %s provider, with its key present and coherent',
-    async (provider) => {
-      vi.stubEnv('ASSISTANT_PROVIDER', provider);
-      vi.stubEnv('ASSISTANT_PROVIDER_KEY', 'sk-dummy');
+  it('fails to boot when ASSISTANT_PROVIDER selects the unshipped anthropic provider, with its key present and coherent', async () => {
+    vi.stubEnv('ASSISTANT_PROVIDER', 'anthropic');
+    vi.stubEnv('ASSISTANT_PROVIDER_KEY', 'sk-dummy');
 
-      await expect(
-        Test.createTestingModule({
-          imports: [ServerA2uiAgentModule],
-        }).compile(),
-      ).rejects.toThrow(/no model client ships/);
-    },
-  );
+    await expect(
+      Test.createTestingModule({
+        imports: [ServerA2uiAgentModule],
+      }).compile(),
+    ).rejects.toThrow(/no model client ships/);
+  });
+
+  it('boots the GeminiAgent when ASSISTANT_PROVIDER=gemini and its key is present', async () => {
+    vi.stubEnv('ASSISTANT_PROVIDER', 'gemini');
+    vi.stubEnv('ASSISTANT_PROVIDER_KEY', 'sk-dummy');
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [ServerA2uiAgentModule],
+    }).compile();
+
+    expect(moduleRef.get(A2UI_AGENT)).toBeInstanceOf(GeminiAgent);
+  });
 });
 
 describe('POST /agent/ui', () => {
@@ -155,7 +167,7 @@ describe('POST /agent/ui', () => {
     expect(parsed.error?.issues ?? []).toEqual([]);
   });
 
-  it('offers the Links whose readings need attention, and no others', async () => {
+  it('offers the Links whose telemetry samples need attention, and no others', async () => {
     const [healthy, degraded, bad, ...untouched] = server.roster();
     server.report(healthy, 'healthy');
     server.report(degraded, 'degraded');
@@ -188,7 +200,7 @@ describe('POST /agent/ui', () => {
       'Text',
     ]);
     expect(components[2]['text']).toContain(
-      'No Link is reporting readings that a configuration change would help',
+      'No Link is reporting telemetry samples that a configuration change would help',
     );
   });
 
@@ -252,7 +264,7 @@ function actionBody(
 describe('POST /agent/ui — the round trip', () => {
   const server = useServer();
 
-  it('answers the confirmation Surface, naming the Link and the Remediation chosen and carrying both readings', async () => {
+  it('answers the confirmation Surface, naming the Link and the Remediation chosen and carrying both telemetry samples', async () => {
     const [, degraded] = server.roster();
     server.report(degraded, 'degraded');
 

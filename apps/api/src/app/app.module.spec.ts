@@ -239,6 +239,11 @@ describe('the Assistant endpoint under the application-wide pipe and filter', ()
  * seam in isolation — actually rests on them.
  */
 describe('boot behaviour over the environment', () => {
+  beforeEach(() => {
+    vi.stubEnv('ASSISTANT_PROVIDER', undefined);
+    vi.stubEnv('ASSISTANT_PROVIDER_KEY', undefined);
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
   });

@@ -1,7 +1,8 @@
-import type {
-  FleetSummary,
-  LinkId,
-  TelemetrySample,
+import {
+  toLinkId,
+  type FleetSummary,
+  type LinkId,
+  type TelemetrySample,
 } from '@linkops/shared/domain';
 import type {
   LinkRecord,
@@ -40,3 +41,42 @@ export const fakeTelemetryPort: TelemetryPort = {
     // no-op
   },
 };
+
+/** A stored record, complete enough for any Assistant test's Roster read. */
+export function recordWith(id: string, name: string): LinkRecord {
+  return {
+    id: toLinkId(id),
+    name,
+    siteA: 'A',
+    siteB: 'B',
+    band: '5GHz',
+    mode: 'PtP',
+    capacityMbps: 100,
+    txPowerDbm: 10,
+    channelWidthMhz: 20,
+    version: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+}
+
+const SAMPLE_TS = '2026-01-01T00:00:04.000Z';
+
+/**
+ * A Telemetry Sample at one of the three states Assistant tests reason
+ * about — `up`, `degraded` and `down` for poor metrics — under `deriveStatus`'s
+ * own thresholds. One table, so a test asking for "a degraded Link's Sample"
+ * always means the same numbers everywhere it asks.
+ */
+export function sampleFor(
+  linkId: LinkId,
+  kind: 'healthy' | 'degraded' | 'bad',
+): TelemetrySample {
+  const byKind = {
+    healthy: { rssiDbm: -50, snrDb: 25, throughputMbps: 90 },
+    degraded: { rssiDbm: -70, snrDb: 12, throughputMbps: 30 },
+    bad: { rssiDbm: -85, snrDb: 5, throughputMbps: 5 },
+  } as const;
+
+  return { linkId, ts: SAMPLE_TS, ...byKind[kind] };
+}

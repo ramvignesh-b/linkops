@@ -13,19 +13,28 @@ describe('loadEnvironment', () => {
     const environment = loadEnvironment({});
 
     expect(environment).toEqual({
-      PORT: 3000,
+      API_PORT: 3000,
       SWAGGER_UI_ENABLED: false,
       ASSISTANT_PROVIDER: 'stub',
       ASSISTANT_PROVIDER_KEY: undefined,
+      ASSISTANT_MODEL: undefined,
     });
   });
 
-  it('coerces a numeric PORT string', () => {
-    expect(loadEnvironment({ PORT: '8080' }).PORT).toBe(8080);
+  it('yields the configured ASSISTANT_MODEL when present', () => {
+    expect(
+      loadEnvironment({ ASSISTANT_MODEL: 'gemini-3.6-flash' }).ASSISTANT_MODEL,
+    ).toBe('gemini-3.6-flash');
   });
 
-  it('names PORT when it is present but not a valid port number', () => {
-    expect(() => loadEnvironment({ PORT: 'not-a-number' })).toThrow(/PORT/);
+  it('coerces a numeric API_PORT string', () => {
+    expect(loadEnvironment({ API_PORT: '8080' }).API_PORT).toBe(8080);
+  });
+
+  it('names API_PORT when it is present but not a valid port number', () => {
+    expect(() => loadEnvironment({ API_PORT: 'not-a-number' })).toThrow(
+      /API_PORT/,
+    );
   });
 
   it('parses the SWAGGER_UI_ENABLED flag into a boolean', () => {
@@ -103,7 +112,7 @@ describe('loadEnvironment', () => {
     }
   });
 
-  it('leaves unrelated environment variables alone — PORT sharing no prefix with an unrelated var is not a near-miss', () => {
+  it('leaves unrelated environment variables alone — API_PORT sharing no prefix with an unrelated var is not a near-miss', () => {
     expect(() =>
       loadEnvironment({ PATH: '/usr/bin', HOME: '/root' }),
     ).not.toThrow();

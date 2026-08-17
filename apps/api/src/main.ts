@@ -50,9 +50,9 @@ async function bootstrap() {
     mountApiExplorer(app, openApiDocument);
   }
 
-  await app.listen(environment.PORT);
+  await app.listen(environment.API_PORT);
   Logger.log(
-    `🚀 Application is running on: http://localhost:${environment.PORT}/${globalPrefix}`,
+    `🚀 Application is running on: http://localhost:${environment.API_PORT}/${globalPrefix}`,
   );
 }
 

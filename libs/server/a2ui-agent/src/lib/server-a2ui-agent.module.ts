@@ -47,7 +47,14 @@ import { selectA2uiAgent } from './select-a2ui-agent';
         repository: LinkRepository,
         telemetry: TelemetryPort,
         config: ServerConfigService,
-      ) => selectA2uiAgent(config.assistantProvider, repository, telemetry),
+      ) =>
+        selectA2uiAgent(
+          config.assistantProvider,
+          repository,
+          telemetry,
+          config.assistantProviderKey,
+          config.assistantModel,
+        ),
       inject: [LINK_REPOSITORY, TELEMETRY_PORT, ServerConfigService],
     },
   ],

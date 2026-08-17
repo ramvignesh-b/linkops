@@ -12,7 +12,7 @@ export class ServerConfigService {
   constructor(@Inject(ENVIRONMENT) private readonly environment: Environment) {}
 
   get port(): number {
-    return this.environment.PORT;
+    return this.environment.API_PORT;
   }
 
   get swaggerUiEnabled(): boolean {
@@ -26,5 +26,15 @@ export class ServerConfigService {
   /** `undefined` whenever `assistantProvider` is `'stub'` — never logged, never sent to the Console. */
   get assistantProviderKey(): string | undefined {
     return this.environment.ASSISTANT_PROVIDER_KEY;
+  }
+
+  /** `undefined` whenever no model is configured and provider is not `'gemini'`. */
+  get assistantModel(): string | undefined {
+    if (this.environment.ASSISTANT_MODEL) {
+      return this.environment.ASSISTANT_MODEL;
+    }
+    return this.environment.ASSISTANT_PROVIDER === 'gemini'
+      ? 'gemini-3.7-flash'
+      : undefined;
   }
 }
