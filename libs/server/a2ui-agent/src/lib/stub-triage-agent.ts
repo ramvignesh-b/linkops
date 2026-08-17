@@ -4,10 +4,11 @@ import {
   type A2uiEnvelope,
   type A2uiRequest,
 } from '@linkops/shared/a2ui-protocol';
-import { withDerivedStatus, type Link } from '@linkops/shared/domain';
+import { withDerivedStatus } from '@linkops/shared/domain';
 import type { LinkRepository } from '@linkops/server/links-data-access';
 import type { Clock, TelemetryPort } from '@linkops/server/telemetry';
 import type { A2uiAgent } from './a2ui-agent';
+import { linksNeedingAttention } from './needs-attention';
 import {
   REMEDIATIONS,
   SURFACE_ID,
@@ -15,21 +16,6 @@ import {
   quietSurface,
   triageSurface,
 } from './triage-surface';
-
-/**
- * A Link worth suggesting a remediation for: one whose readings are bad.
- *
- * `down` for want of data is excluded on purpose. Every remediation this
- * Assistant offers is a change to radio configuration judged against
- * readings, and a Link that has reported nothing has no readings to judge —
- * that is a Link to go and look at, not one to reconfigure.
- */
-function needsAttention(link: Link): boolean {
-  return (
-    link.status.status === 'degraded' ||
-    (link.status.status === 'down' && link.status.reason === 'metrics')
-  );
-}
 
 /**
  * The Assistant that ships: a pure function of its request and the Fleet as
@@ -52,7 +38,11 @@ export class StubTriageAgent implements A2uiAgent {
       return this.answerAction(request);
     }
 
-    const links = this.linksNeedingAttention();
+    const links = linksNeedingAttention(
+      this.repository,
+      this.telemetry,
+      this.clock.now(),
+    );
 
     return {
       version: 'v1.0',
@@ -94,21 +84,5 @@ export class StubTriageAgent implements A2uiAgent {
       version: 'v1.0',
       createSurface: confirmationSurface(link, remediation, sample),
     };
-  }
-
-  /**
-   * Status comes from the shared presenter every other surface reads it
-   * through, so the Assistant cannot disagree with the Fleet list about
-   * which Links are in trouble. No threshold appears in this library.
-   */
-  private linksNeedingAttention(): Link[] {
-    const now = this.clock.now();
-
-    return this.repository
-      .findAll()
-      .map((record) =>
-        withDerivedStatus(record, this.telemetry.latestSample(record.id), now),
-      )
-      .filter(needsAttention);
   }
 }

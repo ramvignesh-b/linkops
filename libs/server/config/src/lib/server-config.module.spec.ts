@@ -12,10 +12,11 @@ import { ServerConfigService } from './server-config.service';
  */
 describe('ServerConfigModule', () => {
   const ENV_KEYS = [
-    'PORT',
+    'API_PORT',
     'SWAGGER_UI_ENABLED',
     'ASSISTANT_PROVIDER',
     'ASSISTANT_PROVIDER_KEY',
+    'ASSISTANT_MODEL',
   ] as const;
 
   beforeEach(() => {
@@ -37,6 +38,22 @@ describe('ServerConfigModule', () => {
     expect(config.swaggerUiEnabled).toBe(false);
     expect(config.assistantProvider).toBe('stub');
     expect(config.assistantProviderKey).toBeUndefined();
+    expect(config.assistantModel).toBeUndefined();
+
+    await moduleRef.close();
+  });
+
+  it('resolves the default gemini model when ASSISTANT_PROVIDER=gemini and ASSISTANT_MODEL is unset', async () => {
+    vi.stubEnv('ASSISTANT_PROVIDER', 'gemini');
+    vi.stubEnv('ASSISTANT_PROVIDER_KEY', 'sk-test-key');
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [ServerConfigModule],
+    }).compile();
+
+    const config = moduleRef.get(ServerConfigService);
+
+    expect(config.assistantModel).toBe('gemini-3.7-flash');
 
     await moduleRef.close();
   });
@@ -50,10 +67,11 @@ describe('ServerConfigModule', () => {
   });
 
   it('resolves a coherent, non-default environment', async () => {
-    vi.stubEnv('PORT', '8080');
+    vi.stubEnv('API_PORT', '8080');
     vi.stubEnv('SWAGGER_UI_ENABLED', 'true');
     vi.stubEnv('ASSISTANT_PROVIDER', 'anthropic');
     vi.stubEnv('ASSISTANT_PROVIDER_KEY', 'sk-dummy');
+    vi.stubEnv('ASSISTANT_MODEL', 'gemini-3.6-flash');
 
     const moduleRef = await Test.createTestingModule({
       imports: [ServerConfigModule],
@@ -65,6 +83,7 @@ describe('ServerConfigModule', () => {
     expect(config.swaggerUiEnabled).toBe(true);
     expect(config.assistantProvider).toBe('anthropic');
     expect(config.assistantProviderKey).toBe('sk-dummy');
+    expect(config.assistantModel).toBe('gemini-3.6-flash');
 
     await moduleRef.close();
   });

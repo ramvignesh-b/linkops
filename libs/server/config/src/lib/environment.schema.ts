@@ -33,10 +33,11 @@ const booleanFlagSchema = z
  * drift from this one.
  */
 export const environmentShapeSchema = z.object({
-  PORT: z.coerce.number().int().positive().default(3000),
+  API_PORT: z.coerce.number().int().positive().default(3000),
   SWAGGER_UI_ENABLED: booleanFlagSchema,
   ASSISTANT_PROVIDER: assistantProviderSchema.default('stub'),
   ASSISTANT_PROVIDER_KEY: z.string().min(1).optional(),
+  ASSISTANT_MODEL: z.string().min(1).optional(),
 });
 
 /**

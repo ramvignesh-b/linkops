@@ -60,32 +60,65 @@ export function quietSurface(): A2uiCreateSurface {
       // Deliberately not "every Link is healthy": a Link reporting nothing
       // at all is down for want of data, which is a different conversation
       // from one a configuration change would help.
-      text: 'No Link is reporting readings that a configuration change would help.',
+      text: 'No Link is reporting telemetry samples that a configuration change would help.',
     }),
   };
 }
 
 function introText(links: readonly Link[]): string {
   return links.length === 1
-    ? '1 Link is reporting readings that need attention. Pick a remediation to consider.'
-    : `${links.length} Links are reporting readings that need attention. Pick one, and a remediation to consider.`;
+    ? '1 Link is reporting telemetry samples that need attention. Pick a remediation to consider.'
+    : `${links.length} Links are reporting telemetry samples that need attention. Pick one, and a remediation to consider.`;
 }
 
 /**
- * The triage offer: the Links whose readings need attention, the
+ * What an Assistant with an opinion contributes to the triage offer, over
+ * and above the Fleet the offer is built from: the words at the top, and
+ * which Link and Remediation the two Selects should already be sitting on.
+ *
+ * Every field is optional, and every one of them falls back to what the
+ * deterministic stub would have chosen — so a model that answers with
+ * nothing useful degrades to the stub's Surface rather than to an empty one.
+ */
+export interface TriageNarrative {
+  intro?: string;
+  linkId?: string;
+  remediation?: string;
+}
+
+/**
+ * The triage offer: the Links whose telemetry samples need attention, the
  * remediations worth considering, and the Button that asks for one.
  *
  * The Data Model starts on the first Link and the first remediation, so the
  * Surface is answerable without touching either control — the two Selects
- * write the operator's choice back over these.
+ * write the operator's choice back over these. A `narrative` moves that
+ * starting point onto the Link and Remediation an Assistant actually
+ * recommends, and replaces the counted intro line with its reasoning; the
+ * components themselves are identical either way, which is what makes a
+ * model's contribution the words and the judgement rather than the
+ * structure.
  */
-export function triageSurface(links: readonly Link[]): A2uiCreateSurface {
+export function triageSurface(
+  links: readonly Link[],
+  narrative: TriageNarrative = {},
+): A2uiCreateSurface {
+  const linkId =
+    links.find((link) => link.id === narrative.linkId)?.id ?? links[0].id;
+  const remediation =
+    REMEDIATIONS.find((candidate) => candidate.value === narrative.remediation)
+      ?.value ?? REMEDIATIONS[0].value;
+
   return {
     surfaceId: SURFACE_ID,
-    dataModel: { linkId: links[0].id, remediation: REMEDIATIONS[0].value },
+    dataModel: { linkId, remediation },
     components: shell(
       ['intro', 'link', 'remediation', 'recommend'],
-      { id: 'intro', component: 'Text', text: introText(links) },
+      {
+        id: 'intro',
+        component: 'Text',
+        text: narrative.intro ?? introText(links),
+      },
       {
         id: 'link',
         component: 'Select',
@@ -133,12 +166,19 @@ function sampleText(
  * left to bind against. Together with `triageSurface`'s `Select` and
  * `Button`, this is the last of the six whitelisted component types
  * exercised by the product rather than only by hostile fixtures.
+ *
+ * A `rationale` is an Assistant's reason for the recommendation, appended
+ * to the line naming it. Absent — as it always is for the stub — the line
+ * reads exactly as it did before an Assistant with an opinion existed.
  */
 export function confirmationSurface(
   link: Link,
   remediation: Remediation,
   sample: TelemetrySample | null,
+  rationale?: string,
 ): A2uiCreateSurface {
+  const headline = `${link.name}: ${remediation.label}`;
+
   return {
     surfaceId: SURFACE_ID,
     components: shell(
@@ -146,7 +186,7 @@ export function confirmationSurface(
       {
         id: 'intro',
         component: 'Text',
-        text: `${link.name}: ${remediation.label}`,
+        text: rationale ? `${headline} — ${rationale}` : headline,
       },
       {
         id: 'snr',
