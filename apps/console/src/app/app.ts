@@ -23,7 +23,9 @@ import { ConnectionBanner } from '@linkops/console/ui';
   imports: [ConnectionBanner, RouterOutlet],
   template: `
     <header>
-      <h1>LinkOps</h1>
+      <div class="header-inner">
+        <h1>LinkOps</h1>
+      </div>
     </header>
     <main>
       <lib-connection-banner
@@ -35,9 +37,15 @@ import { ConnectionBanner } from '@linkops/console/ui';
   `,
   styles: `
     header {
-      padding: var(--space-3) var(--space-4);
       background: var(--surface-raised);
       border-bottom: 1px solid var(--border);
+    }
+
+    .header-inner {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: var(--space-3) var(--space-4);
+      box-sizing: border-box;
     }
 
     h1 {
@@ -52,6 +60,9 @@ import { ConnectionBanner } from '@linkops/console/ui';
       gap: var(--space-3);
       /* A desktop layout: widened to accommodate the fleet table and the assistant panel side-by-side */
       max-width: 1440px;
+      margin: 0 auto;
+      width: 100%;
+      box-sizing: border-box;
       padding: var(--space-4);
     }
   `,
