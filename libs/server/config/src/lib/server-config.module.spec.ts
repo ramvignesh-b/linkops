@@ -35,7 +35,7 @@ describe('ServerConfigModule', () => {
     const config = moduleRef.get(ServerConfigService);
 
     expect(config.port).toBe(3000);
-    expect(config.swaggerUiEnabled).toBe(false);
+    expect(config.swaggerUiEnabled).toBe(true);
     expect(config.assistantProvider).toBe('stub');
     expect(config.assistantProviderKey).toBeUndefined();
     expect(config.assistantModel).toBeUndefined();

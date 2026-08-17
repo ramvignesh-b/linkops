@@ -1,5 +1,7 @@
 # LinkOps Console
 
+**[Live Demo](https://projects.ramvignesh.dev/linkops)**
+
 ## 1. What this is
 
 An operator console for a fleet of point-to-point radio links. It shows live
@@ -61,7 +63,7 @@ copy it to `.env` (gitignored) to override anything locally.
 | Variable                 | What it does                                                                 | Required?                                        | Default             | Example                 |
 | ------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------------ | ------------------- | ----------------------- |
 | `API_PORT`               | Port the API listens on                                                      | Optional                                         | `3000`              | `3100`                  |
-| `SWAGGER_UI_ENABLED`     | Mounts the Swagger explorer at `GET /api`. `GET /api/openapi.json` is served either way | Optional                              | `false`             | `true`                  |
+| `SWAGGER_UI_ENABLED`     | Mounts the Swagger explorer at `GET /api`. `GET /api/openapi.json` is served either way | Optional                              | `true`              | `false`                 |
 | `ASSISTANT_PROVIDER`     | `stub` (ships in this repo, no key), `gemini`, or `anthropic` — selects the model client behind the `A2uiAgent` seam | Optional            | `stub`              | `gemini`                |
 | `ASSISTANT_PROVIDER_KEY` | Credential for a real model provider. Never logged, never sent to the Console | Only when `ASSISTANT_PROVIDER` is not `stub`     | *(none)*            | `dummy-key-do-not-use`  |
 | `ASSISTANT_MODEL`        | Model identifier when `ASSISTANT_PROVIDER=gemini`                            | Optional                                         | *(adapter default)* | `gemini-3.5-flash-lite` |
