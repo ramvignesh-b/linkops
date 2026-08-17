@@ -26,7 +26,7 @@ function describeCode(code: ApiErrorCode): string {
 }
 
 describe('ApiErrorCode', () => {
-  it('has exactly the five codes ticket 12 fixes', () => {
+  it('has exactly the five codes the error contract fixes', () => {
     const codes: ApiErrorCode[] = [
       'LINK_NOT_FOUND',
       'LINK_VERSION_CONFLICT',

@@ -18,7 +18,7 @@ import { ServerStreamApiModule } from '@linkops/server/stream-api';
  * are gone as of this module: nothing referenced them, no test asserted
  * them, and they occupied the same root path `mountApiExplorer` mounts the
  * Swagger explorer at — an undocumented placeholder silently shadowing the
- * real API surface's root is exactly the kind of ambiguity ticket `41`'s
+ * real API surface's root is exactly the kind of ambiguity this repo's
  * fail-fast, no-silent-fallback stance argues against.
  */
 @Module({

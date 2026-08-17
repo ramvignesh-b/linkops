@@ -10,8 +10,8 @@ import { StreamController } from './stream.controller';
  * with the links API rather than constructing its own — a second Simulator
  * would be a second Fleet inside one process.
  *
- * The subscriber counter is exported because ticket `06`'s health instrument
- * publishes it as `sseSubscribers`.
+ * The subscriber counter is exported because the health instrument publishes
+ * it as `sseSubscribers`.
  */
 @Module({
   imports: [ServerLinksDataAccessModule, ServerTelemetryModule],

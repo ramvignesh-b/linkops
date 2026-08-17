@@ -50,9 +50,9 @@ import { TELEMETRY_SAMPLE_STORE } from './telemetry-sample-store.token';
       inject: [LINK_REPOSITORY, TELEMETRY_SAMPLE_STORE],
     },
   ],
-  // Simulator is exported alongside the tokens because ticket 06's health
-  // instrument reads its Tick count from a feature module, and a provider
-  // Nest merely lifecycle-manages is not resolvable from outside this one.
+  // Simulator is exported alongside the tokens because the health instrument
+  // reads its Tick count from a feature module, and a provider Nest merely
+  // lifecycle-manages is not resolvable from outside this one.
   exports: [TELEMETRY_PORT, TELEMETRY_BUS, TELEMETRY_SAMPLE_STORE, Simulator],
 })
 export class ServerTelemetryModule {}

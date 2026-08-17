@@ -7,9 +7,9 @@ import { StubTriageAgent } from './stub-triage-agent';
 import { selectA2uiAgent } from './select-a2ui-agent';
 
 /**
- * The seam ticket `41` exists for: an `AssistantProvider` value in, an
- * `A2uiAgent` out (or a boot failure) — the one place `ServerA2uiAgentModule`
- * decides which implementation `A2UI_AGENT` resolves to.
+ * The provider seam: an `AssistantProvider` value in, an `A2uiAgent` out (or
+ * a boot failure) — the one place `ServerA2uiAgentModule` decides which
+ * implementation `A2UI_AGENT` resolves to.
  */
 describe('selectA2uiAgent', () => {
   it('builds the stub for the "stub" provider', () => {

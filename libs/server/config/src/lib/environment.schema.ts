@@ -12,7 +12,7 @@ export const assistantProviderSchema = z.enum(['stub', 'gemini', 'anthropic']);
 export type AssistantProvider = z.infer<typeof assistantProviderSchema>;
 
 /**
- * A string env var carrying exactly `"true"` or `"false"`, defaulting off,
+ * A string env var carrying exactly `"true"` or `"false"`, defaulting on,
  * transformed to a real boolean. `z.coerce.boolean()` was rejected here on
  * purpose — every non-empty string, including `"false"`, coerces to `true`
  * under it, which would make `SWAGGER_UI_ENABLED=false` turn the explorer
@@ -20,7 +20,7 @@ export type AssistantProvider = z.infer<typeof assistantProviderSchema>;
  */
 const booleanFlagSchema = z
   .enum(['true', 'false'])
-  .default('false')
+  .default('true')
   .transform((value) => value === 'true');
 
 /**
