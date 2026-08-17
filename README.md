@@ -145,6 +145,7 @@ pnpm test        # every project — nx run-many -t test
 pnpm lint        # ESLint, including the module-boundary rules of §7
 pnpm typecheck   # tsc --noEmit across every project
 pnpm build       # production builds, with bundle budgets enforced
+pnpm coverage    # one merged coverage report across both test runners
 ```
 
 While developing, pass a filename fragment after `--`:
@@ -155,6 +156,27 @@ pnpm nx test console-data-access                # one project
 ```
 
 A fragment matching no file exits non-zero rather than passing silently.
+
+**Coverage.** `pnpm coverage` writes one report to `coverage/` — HTML,
+`lcov.info`, and a `summary.json` that CI turns into a step summary. It prints
+the report's `file://` URL when it finishes, or `pnpm coverage --open` launches
+a browser straight at it. All 138 files sit on one sortable page, so clicking
+the *Statements* header brings the least-covered file to the top. It is reported,
+never gated: there is no threshold, because a number chosen before anyone
+measured the baseline is a number nobody trusts.
+
+Producing it takes a merge. `apps/api` and the libraries run under plain Vitest,
+but `apps/console` and `apps/assistant` run under `@angular/build:unit-test`,
+which cannot join the root config's project union — so a Vitest-only report shows
+every file in `libs/console/ui` as untested, when those components are
+deliberately asserted at the `apps/console` seam. `tools/coverage.mjs` runs both
+runners and unions the maps. Files no test imports are counted as 0% rather than
+dropped, so the denominator is every source file under `apps/*/src` and
+`libs/*/src` — bar the library barrels, which are pure re-exports and contribute
+nothing to any metric. Where both runners cover the same file, their statement maps
+disagree — the two pipelines compile it differently — so that file is counted
+from whichever run exercised it more. The result under-reports rather than
+over-reports.
 
 **How long it takes.** A cold `pnpm test --skipNxCache` across all 17 projects
 takes about **50 seconds** (49.0 s measured, all 17 green). A warm re-run takes
@@ -188,7 +210,8 @@ linkops/
 │   │   ├── links-api/           REST controllers for links and the fleet summary
 │   │   ├── stream-api/          GET /api/stream — the tick-to-events pipeline
 │   │   ├── a2ui-agent/          A2uiAgent interface: stub and Gemini implementations
-│   │   └── health/              Liveness
+│   │   └── health/              No runtime code — holds the Nest DI and decorator-
+│   │                            metadata guard (ADR-0002). There is no health endpoint.
 │   └── console/                 platform:console
 │       ├── data-access/         FleetStore, stream client, tick coalescer, HTTP clients
 │       ├── ui/                  Presentational components + the A2UI surface renderer
