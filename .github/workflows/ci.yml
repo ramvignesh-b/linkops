@@ -52,6 +52,23 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Locate the Playwright browser version
+        id: playwright-version
+        run: echo "version=$(node -e "console.log(require('playwright-core/package.json').version)")" >> "$GITHUB_OUTPUT"
+
+      # The Console's own build already exercises Playwright's browser
+      # download once; this cache is what keeps every later CI run from
+      # doing it again just to measure a bundle.
+      - uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright's Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
       # Hooks are bypassable with --no-verify, so the whole history is checked
       # here rather than trusting that every commit passed one on the way in.
       - name: Commit messages
@@ -72,13 +89,15 @@ jobs:
         run: pnpm build
 
       # Angular's own budgets (console's `esbuild` target) only see
-      # main/polyfills/styles; this adds Native Federation's shared-
-      # dependency bundles, fetched before first render too but outside
-      # that check's visibility — see tools/verify-bundle-budget.mjs and
-      # ADR-0014.
+      # main/polyfills/styles. This serves the real build and measures the
+      # real bytes a headless browser downloads landing on `/` — the only
+      # trustworthy number once Module Federation is in play; see
+      # tools/verify-bundle-budget.mjs's header comment and ADR-0014's
+      # "Consequences" for why a filename-based guess was tried first, was
+      # wrong twice, and was replaced by actually asking a browser.
       #
       # `continue-on-error: true` because the true total is currently over
-      # the 1000 kB error budget (~1190 kB) — a real regression this check
+      # the 1000 kB error budget (~1,450 kB) — a real regression this check
       # exists to surface, not one this PR fixes. Blocking on it here would
       # make every PR red until that's remediated. Remove this line once
       # the bundle is back under budget and this can gate for real.
@@ -101,7 +120,8 @@ jobs:
             STATUS=$(echo "$REPORT_JSON" | jq -r '.status')
             WARN_KB=$(echo "$REPORT_JSON" | jq -r '.warnKb')
             ERROR_KB=$(echo "$REPORT_JSON" | jq -r '.errorKb')
-            TRUE_KB=$(echo "$REPORT_JSON" | jq -r '(.trueInitialBytes / 1000) | round')
+            TOTAL_KB=$(echo "$REPORT_JSON" | jq -r '(.totalBytes / 1000) | round')
+            REQUEST_COUNT=$(echo "$REPORT_JSON" | jq -r '.entries | length')
 
             case "$STATUS" in
               error) BADGE="❌ Fail — over the ${ERROR_KB} kB error budget" ;;
@@ -113,30 +133,16 @@ jobs:
               echo "### 📦 Console Bundle Observability"
               echo "<!-- console-bundle-report -->"
               echo ""
-              echo "#### 🚀 True First-Load Payload (Budget: ${WARN_KB} kB warn / ${ERROR_KB} kB error)"
+              echo "#### 🚀 Real First-Load Payload (Budget: ${WARN_KB} kB warn / ${ERROR_KB} kB error)"
               echo ""
-              echo "Angular's own bundler only tracks \`main\`/\`polyfills\`/\`styles\` as \"initial\" — it has no visibility into Native Federation's shared-dependency bundles, even though every one of them is fetched before first render. This total includes both."
+              echo "Measured, not guessed from filenames: a real headless browser, served the real production build, landing on \`/\` — every byte every response actually carried before the Fleet table rendered (\`${REQUEST_COUNT}\` requests). Angular's own bundler only tracks \`main\`/\`polyfills\`/\`styles\` as \"initial\"; this is what a first visit actually downloads, Native Federation's shared-dependency bundles included."
               echo ""
-              echo "| Asset | Type | Raw Size |"
-              echo "| :--- | :--- | ---: |"
-              echo "$REPORT_JSON" | jq -r '.initial[] | "| `\(.file)` | Initial | \(((.bytes/1000)*100|round)/100) kB |"'
-              echo "$REPORT_JSON" | jq -r '.shared[] | "| `\(.file)` | Federation shared dep | \(((.bytes/1000)*100|round)/100) kB |"'
-              echo "| **True first-load total** | **Initial + shared deps** | **${TRUE_KB} kB** |"
+              echo "| Asset | Raw Size |"
+              echo "| :--- | ---: |"
+              echo "$REPORT_JSON" | jq -r '.entries | sort_by(-.bytes)[] | "| `\(.file)` | \(((.bytes/1000)*100|round)/100) kB |"'
+              echo "| **Real first-load total** | **${TOTAL_KB} kB** |"
               echo ""
               echo "**Budget status:** ${BADGE}"
-              echo ""
-              echo "#### 💤 Lazy Chunks (Loaded on Demand)"
-              echo "| Asset | Type | Raw Size |"
-              echo "| :--- | :--- | ---: |"
-              echo "$REPORT_JSON" | jq -r '.lazy[] | "| `\(.file)` | Lazy Route | \(((.bytes/1000)*100|round)/100) kB |"'
-              echo ""
-              echo "#### 🔤 Self-Hosted Media (Fonts / Assets)"
-              echo "| Asset Category | On-Disk Size | Transferred Subset |"
-              echo "| :--- | :--- | :--- |"
-              if [ -d "$DIST/media" ]; then
-                echo "| Fonts (\`media/*.woff2\`) | $(du -sh "$DIST/media" | awk '{print $1}') | ~62 kB (Latin subsets on first load) |"
-              fi
-              echo "| Favicon & HTML | $(ls -lh "$DIST/favicon.ico" "$DIST/index.html" 2>/dev/null | awk '{sum+=$5} END {print sum " kB"}') | Cached on load |"
             } > "$REPORT_FILE"
 
             cat "$REPORT_FILE" >> $GITHUB_STEP_SUMMARY

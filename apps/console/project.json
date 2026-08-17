@@ -44,7 +44,7 @@
       }
     },
     "verify-bundle-budget": {
-      "// note": "650/1000 kB must match the esbuild target's own budgets below — that check only sees Angular's own initial output; this one adds Native Federation's shared-dependency bundles, fetched before first render too but outside that check's visibility. See tools/verify-bundle-budget.mjs.",
+      "// note": "650/1000 kB must match the esbuild target's own budgets below — that check only sees Angular's own initial output. This one serves the real build and measures real bytes a headless browser downloads landing on '/', which is the only trustworthy number once Module Federation is in play — see tools/verify-bundle-budget.mjs's header comment for why a filename-based guess was tried first and was wrong twice.",
       "cache": true,
       "dependsOn": ["build"],
       "executor": "nx:run-commands",

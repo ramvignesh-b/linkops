@@ -1,35 +1,30 @@
 #!/usr/bin/env node
 /**
- * Verifies the *true* first-load payload of a Native Federation host's
- * production build, against the same budget its `project.json` states.
+ * Verifies the Console's true first-load payload against the budget
+ * `apps/console/project.json` states, by measuring it — serving the real
+ * production build and driving a real headless browser to `/`, then
+ * summing the actual bytes every response carried.
  *
- * `@angular/build:application`'s own budget check only sees what its own
- * bundler emits as an initial `<script>`/`<link>` tag — `main.js`,
- * `polyfills.js`, `styles.css`. It has no visibility into the shared-
- * dependency bundles Native Federation builds and serves separately
- * (`_angular_core.<hash>.js`, `zod.<hash>.js`,
- * `_linkops_console_data_access-<hash>.js`, ...), even though every one of
- * them is required to bootstrap the app and is fetched before first render
- * regardless — confirmed against a real browser session, not assumed. See
- * ADR-0014's "Consequences" for the measurement this caught.
+ * This replaced a static-file classification (main/polyfills/styles vs.
+ * `chunk-*.js` vs. everything else) that looked reasonable and was wrong
+ * twice in one sitting: it excluded Native Federation's shared-dependency
+ * bundles entirely (they are not an initial `<script>` tag Angular's own
+ * bundler emits, so a filename-based check never finds them, even though
+ * every one of them is fetched before first render — see ADR-0014's
+ * "Consequences"), and separately, it treated every `chunk-<hash>.js` file
+ * as optional "on demand" weight — wrong for the specific chunk the `/`
+ * route's redirect to `/links` pulls in on every single visit, which is
+ * not on demand in any sense that matters. Guessing which chunk belongs to
+ * the default route from a filename alone is not reliable; asking a real
+ * browser what it actually downloaded is. That is what this does instead.
  *
- * Three buckets, by filename:
- * - `main*.js` / `polyfills*.js` / `styles*.css` — Angular's own "initial",
- *   the only thing the built-in budget checker counts.
- * - `chunk-<hash>.js` — genuine lazy route chunks. Correctly excluded: these
- *   really are fetched on demand, not at boot.
- * - everything else — Native Federation's shared-dependency bundles. Not a
- *   lazy chunk's naming shape, not Angular's own initial output, but part of
- *   the true first-load total this script exists to compute.
- *
- * `--json` prints one structured line to stdout instead of the human-
- * readable report — what the CI bundle-report step reads, so both the gate
- * and the PR comment read the one classification, rather than each
- * re-deriving it and risking drifting apart the way the bundle-report step
- * that predates this file did.
+ * Requires the Chromium binary Playwright drives: `npx playwright install
+ * chromium`, once, wherever this runs (locally or in CI).
  */
-import { readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { createServer } from 'node:http';
+import { readFileSync, statSync } from 'node:fs';
+import { extname, join, normalize, sep } from 'node:path';
+import { chromium } from 'playwright-core';
 
 const args = process.argv.slice(2);
 const jsonMode = args.includes('--json');
@@ -45,81 +40,145 @@ if (!distDir) {
 const warnKb = Number(warnKbArg ?? 650);
 const errorKb = Number(errorKbArg ?? 1000);
 
-const isInitial = (file) =>
-  /^main[.-]/.test(file) ||
-  /^polyfills[.-]/.test(file) ||
-  /^styles[.-].*\.css$/.test(file);
-const isLazyRouteChunk = (file) => /^chunk-[A-Za-z0-9]+\.js$/.test(file);
+const MIME_TYPES = {
+  '.js': 'application/javascript',
+  '.mjs': 'application/javascript',
+  '.css': 'text/css',
+  '.html': 'text/html',
+  '.json': 'application/json',
+  '.woff2': 'font/woff2',
+  '.ico': 'image/x-icon',
+  '.svg': 'image/svg+xml',
+  '.map': 'application/json',
+};
 
-const files = readdirSync(distDir).filter(
-  (file) => file.endsWith('.js') || file.endsWith('.css'),
-);
+/**
+ * A static file server with no compression and no caching headers — every
+ * byte it sends is a byte on disk, so what a response body measures here is
+ * the same raw-byte convention `apps/console/project.json`'s own `budgets`
+ * already use. SPA-style fallback to `index.html`: this app resolves its
+ * own routing client-side once `main.js` runs, so any path this server
+ * doesn't recognise as a real file is the app shell, not a 404.
+ */
+function serveStatic(root) {
+  return createServer((req, res) => {
+    const urlPath = decodeURIComponent((req.url ?? '/').split('?')[0]);
 
-const initial = [];
-const shared = [];
-const lazy = [];
+    // apps/api isn't running for this measurement — a deliberate scoping
+    // choice, not an oversight. This tool measures the Console's own asset
+    // payload; live API responses (a roster of ten Links, a Summary) are a
+    // few kB against ~1 MB of framework and app code, and answering them
+    // with the SPA's index.html fallback instead of a 404 would silently
+    // inflate the total with fallback-page noise wearing an API response's
+    // name.
+    if (urlPath.startsWith('/api/')) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
 
-for (const file of files) {
-  const bytes = statSync(join(distDir, file)).size;
-  const entry = { file, bytes };
-  if (isInitial(file)) {
-    initial.push(entry);
-  } else if (isLazyRouteChunk(file)) {
-    lazy.push(entry);
-  } else {
-    shared.push(entry);
-  }
+    const safePath = normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
+    let filePath = join(root, safePath);
+
+    try {
+      if (statSync(filePath).isDirectory()) {
+        filePath = join(filePath, 'index.html');
+      }
+    } catch {
+      filePath = join(root, 'index.html');
+    }
+
+    if (!filePath.startsWith(root + sep) && filePath !== root) {
+      res.writeHead(403);
+      res.end();
+      return;
+    }
+
+    try {
+      const body = readFileSync(filePath);
+      res.writeHead(200, {
+        'content-type':
+          MIME_TYPES[extname(filePath)] ?? 'application/octet-stream',
+      });
+      res.end(body);
+    } catch {
+      res.writeHead(404);
+      res.end();
+    }
+  });
 }
 
-const sum = (entries) =>
-  entries.reduce((total, entry) => total + entry.bytes, 0);
-const initialBytes = sum(initial);
-const sharedBytes = sum(shared);
-const lazyBytes = sum(lazy);
-const trueInitialBytes = initialBytes + sharedBytes;
+function listen(server) {
+  return new Promise((resolve, reject) => {
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve(server.address().port));
+  });
+}
+
+const server = serveStatic(distDir);
+const port = await listen(server);
+const origin = `http://127.0.0.1:${port}`;
+
+let browser;
+const bytesByUrl = new Map();
+
+try {
+  browser = await chromium.launch({ args: ['--no-sandbox'] });
+  const page = await browser.newPage();
+
+  page.on('response', async (response) => {
+    if (!response.url().startsWith(origin)) return;
+    try {
+      bytesByUrl.set(response.url(), (await response.body()).length);
+    } catch {
+      // No body to measure (e.g. a redirect) — nothing to add.
+    }
+  });
+
+  await page.goto(origin + '/', { waitUntil: 'networkidle' });
+  // The Fleet route is what `/` redirects to — its table is the signal
+  // that everything this visit actually needed has arrived.
+  await page.waitForSelector('table', { timeout: 15000 });
+} finally {
+  await browser?.close();
+  server.close();
+}
+
+const entries = [...bytesByUrl.entries()].map(([url, bytes]) => ({
+  file: url.slice(origin.length + 1) || 'index.html',
+  bytes,
+}));
+const totalBytes = entries.reduce((total, entry) => total + entry.bytes, 0);
 
 const status =
-  trueInitialBytes > errorKb * 1000
+  totalBytes > errorKb * 1000
     ? 'error'
-    : trueInitialBytes > warnKb * 1000
+    : totalBytes > warnKb * 1000
       ? 'warn'
       : 'pass';
 
 if (jsonMode) {
-  console.log(
-    JSON.stringify({
-      warnKb,
-      errorKb,
-      initial,
-      shared,
-      lazy,
-      initialBytes,
-      sharedBytes,
-      lazyBytes,
-      trueInitialBytes,
-      status,
-    }),
-  );
+  console.log(JSON.stringify({ warnKb, errorKb, entries, totalBytes, status }));
 } else {
   const kb = (bytes) => (bytes / 1000).toFixed(2);
+  const sorted = [...entries].sort((a, b) => b.bytes - a.bytes);
 
-  console.log(`Angular-tracked initial:   ${kb(initialBytes)} kB`);
+  for (const entry of sorted) {
+    console.log(`${kb(entry.bytes).padStart(10)} kB  ${entry.file}`);
+  }
+  console.log();
   console.log(
-    `Federation shared deps:    ${kb(sharedBytes)} kB (${shared.length} files — fetched before first render, invisible to Angular's own budget check)`,
+    `Real first-load total:   ${kb(totalBytes)} kB (${entries.length} requests)`,
   );
-  console.log(
-    `Lazy route chunks:         ${kb(lazyBytes)} kB (on demand — correctly excluded)`,
-  );
-  console.log(`TRUE first-load total:     ${kb(trueInitialBytes)} kB`);
   console.log();
 
   if (status === 'error') {
     console.error(
-      `✖ ${kb(trueInitialBytes)} kB exceeds the ${errorKb} kB error budget.`,
+      `✖ ${kb(totalBytes)} kB exceeds the ${errorKb} kB error budget.`,
     );
   } else if (status === 'warn') {
     console.warn(
-      `⚠ ${kb(trueInitialBytes)} kB exceeds the ${warnKb} kB warn budget.`,
+      `⚠ ${kb(totalBytes)} kB exceeds the ${warnKb} kB warn budget.`,
     );
   } else {
     console.log(`✔ within the ${warnKb} kB warn budget.`);

@@ -103,21 +103,38 @@ is answerable to.
   same PR's `sharedMappings` and `shareAll` config produce
   (`_angular_core.<hash>.js`, `zod.<hash>.js`, and the rest) are built by a
   separate step and are invisible to that check — but they are not
-  optional: a real browser session confirms every one of them is fetched
-  before the Fleet route ever renders. Measured together
-  (`tools/verify-bundle-budget.mjs`), the true total is **1,190 kB raw**,
-  over the 1 MB error budget the `esbuild` target's own config states.
-  This was caught by manually reconciling a CI-posted bundle report against
-  the actual `dist/` output after a question about that report's accuracy,
-  not by any check that existed before it — the CI step that posts it
-  (`.github/workflows/ci.yml`) previously only summed files referenced by
-  name in `index.html`, which never includes these, so it had silently
-  been reporting an incomplete number since the shared-dependency bundles
-  started existing. Both the CI step and `tools/verify-bundle-budget.mjs`
-  are fixed to report the true total as of this PR; the CI gate is
-  `continue-on-error: true` until the actual regression is remediated,
-  since failing on it now would make every PR red for a problem this PR
-  surfaced but did not yet fix.
+  optional: they are fetched before the Fleet route ever renders. The true
+  total, measured by serving the real production build and asking a real
+  headless browser what it downloaded landing on `/`
+  (`tools/verify-bundle-budget.mjs`), is **1,450 kB**, well over the 1 MB
+  error budget the `esbuild` target's own config states.
+  - This surfaced from a question about a CI-posted bundle report's
+    accuracy, not any check that existed before it. That report
+    (`.github/workflows/ci.yml`) had summed only files referenced by name
+    in `index.html`, which never includes the shared-dependency bundles,
+    so it had silently been reporting an incomplete number since those
+    bundles started existing.
+  - The first replacement got it wrong too, in the opposite direction:
+    classifying files by name (`chunk-<hash>.js` = lazy, excluded) missed
+    that the specific chunk the `/` → `/links` redirect pulls in is not
+    optional on a normal visit — a filename can't say which chunk belongs
+    to the default route and which is genuinely deferred. `tools/verify-bundle-budget.mjs`
+    stopped guessing from filenames entirely and now measures a real
+    browser's real downloads instead.
+  - `zod` alone accounts for 385 kB: a shared-dependency bundle builds
+    from the package's own entry point, not from what this workspace
+    calls, so it ships zod's whole public API rather than the schema
+    builders `shared/domain` and `shared/a2ui-protocol` actually use.
+    Skipping it from the shared list was tried, on the theory that it
+    would then be tree-shaken to actual usage instead. It was not — zod
+    resists dead-code elimination regardless of where it is bundled — and
+    removing it from `shared` only stopped it being deduplicated across
+    `apps/console` and `apps/assistant`, raising the total to 1,732 kB.
+    Reverted; not part of this PR's diff.
+  - The CI gate (`Verify bundle budget`) is `continue-on-error: true`
+    until the actual regression is remediated — failing on it now would
+    make every PR red for a problem this PR surfaced but has not fixed.
+    Remediating it is separate, not-yet-scoped work.
 - `console/data-access` and `libs/shared/domain` are declared shared
   singletons in both `federation.config.mjs` files. This is not an
   optimisation: `AssistantInvalidPayloadError` is defined in
