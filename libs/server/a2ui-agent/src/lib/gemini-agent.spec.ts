@@ -2,6 +2,7 @@ import {
   a2uiEnvelopeSchema,
   type A2uiCreateSurface,
 } from '@linkops/shared/a2ui-protocol';
+import { DEFAULT_GEMINI_MODEL } from '@linkops/server/config';
 import type { Clock } from '@linkops/server/telemetry';
 import {
   fakeLinkRepository,
@@ -82,6 +83,16 @@ describe('GeminiAgent — what it asks the model for', () => {
 
     expect(GoogleGenAIMock).toHaveBeenCalledWith(
       expect.objectContaining({ apiKey: 'sk-test-key' }),
+    );
+  });
+
+  it('uses the default model when not configured', async () => {
+    mockGeminiReply(triageReply);
+
+    await agentWith().respond({ kind: 'open' });
+
+    expect(generateContent).toHaveBeenCalledWith(
+      expect.objectContaining({ model: DEFAULT_GEMINI_MODEL }),
     );
   });
 

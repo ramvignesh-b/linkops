@@ -736,7 +736,7 @@ any of these locally; every value there is a placeholder, never a real key.
 | `SWAGGER_UI_ENABLED` | `false` | Mounts the interactive Swagger explorer at `GET /api` when `true`. `GET /api/openapi.json` is served either way — see [OpenAPI document](#openapi-document) |
 | `ASSISTANT_PROVIDER` | `stub` | `stub` needs no key and is what ships in this repository. `gemini` and `anthropic` each select a real model client behind the `A2uiAgent` seam (`libs/server/a2ui-agent`) — see below |
 | `ASSISTANT_PROVIDER_KEY` | *(none)* | Required only when `ASSISTANT_PROVIDER` is `gemini` or `anthropic`. Never logged and never sent to the Console — the Console has no knowledge that a provider concept exists at all |
-| `ASSISTANT_MODEL` | `gemini-3.7-flash` | The model identifier used when `ASSISTANT_PROVIDER=gemini` |
+| `ASSISTANT_MODEL` | `gemini-3.5-flash-lite` | The model identifier used when `ASSISTANT_PROVIDER=gemini` |
 
 **No credentials, no problem.** An empty environment is coherent by
 construction — nothing here is *required* — which is what makes "clone,
