@@ -1,6 +1,6 @@
 # server-config
 
-The configuration seam: `PORT`, `SWAGGER_UI_ENABLED`, `ASSISTANT_PROVIDER`
+The configuration seam: `API_PORT`, `SWAGGER_UI_ENABLED`, `ASSISTANT_PROVIDER`
 and `ASSISTANT_PROVIDER_KEY`, validated for coherence rather than presence —
 every variable is individually optional, so a fresh clone with no `.env`
 starts and runs the Assistant on the stub, and an incoherent one fails
