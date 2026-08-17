@@ -28,13 +28,16 @@ import {
   `,
   styles: `
     :host {
-      display: flex;
+      display: inline-flex;
       align-items: center;
+      justify-content: flex-end;
       gap: var(--space-2);
+      max-width: 100%;
     }
 
     .track {
-      flex: 0 0 80px;
+      flex: 0 1 80px;
+      min-width: 32px;
       height: var(--space-2);
       background: var(--divider);
       border-radius: var(--radius);
@@ -51,6 +54,7 @@ import {
       font-size: var(--font-size-small);
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
+      flex-shrink: 0;
     }
   `,
 })

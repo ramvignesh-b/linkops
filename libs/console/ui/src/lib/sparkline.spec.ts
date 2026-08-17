@@ -176,6 +176,22 @@ describe('Sparkline', () => {
     expect(y).toBeGreaterThan(0);
   });
 
+  it('renders scale labels and time axis measurements', () => {
+    host.samples = [sample('2026-08-16T10:00:00.000Z', 25)];
+    host.capacityMbps = 100;
+    fixture.detectChanges();
+
+    const yAxis = fixture.nativeElement.querySelector('.y-axis');
+    expect(yAxis).not.toBeNull();
+    expect(yAxis.textContent).toContain('100M');
+    expect(yAxis.textContent).toContain('50M');
+    expect(yAxis.textContent).toContain('0');
+
+    const timeAxis = fixture.nativeElement.querySelector('.time-axis');
+    expect(timeAxis).not.toBeNull();
+    expect(timeAxis.textContent).toContain('Now');
+  });
+
   it('renders empty indicator when no samples exist', () => {
     host.samples = [];
     fixture.detectChanges();

@@ -128,26 +128,54 @@ export function buildSparklinePath(
   template: `
     @if (samples().length > 0) {
       <div class="sparkline-container">
-        <div class="capacity-marker">
-          <span>Capacity: {{ capacityMbps() }} Mbps</span>
+        <div class="chart-body">
+          <div class="y-axis" aria-hidden="true">
+            <span class="y-label capacity">{{ capacityMbps() }}M</span>
+            <span class="y-label mid">{{ halfCapacity() }}M</span>
+            <span class="y-label base">0</span>
+          </div>
+          <div class="chart-canvas">
+            <svg
+              [attr.viewBox]="viewBox"
+              preserveAspectRatio="none"
+              class="sparkline-svg"
+              aria-label="Throughput history sparkline"
+            >
+              <!-- Capacity ceiling reference line -->
+              <line
+                x1="0"
+                [attr.y1]="capacityY"
+                [attr.x2]="width"
+                [attr.y2]="capacityY"
+                class="capacity-line"
+                stroke-dasharray="4 2"
+              />
+              <!-- Mid-point reference line -->
+              <line
+                x1="0"
+                [attr.y1]="midY"
+                [attr.x2]="width"
+                [attr.y2]="midY"
+                class="mid-line"
+                stroke-dasharray="2 4"
+              />
+              <!-- Baseline reference line -->
+              <line
+                x1="0"
+                y1="59.5"
+                [attr.x2]="width"
+                y2="59.5"
+                class="base-line"
+              />
+              <path [attr.d]="path()" class="sparkline-path" fill="none" />
+            </svg>
+          </div>
         </div>
-        <svg
-          [attr.viewBox]="viewBox"
-          preserveAspectRatio="none"
-          class="sparkline-svg"
-          aria-label="Throughput history sparkline"
-        >
-          <!-- Capacity ceiling reference line -->
-          <line
-            x1="0"
-            [attr.y1]="capacityY"
-            [attr.x2]="width"
-            [attr.y2]="capacityY"
-            class="capacity-line"
-            stroke-dasharray="4 2"
-          />
-          <path [attr.d]="path()" class="sparkline-path" fill="none" />
-        </svg>
+        <div class="time-axis" aria-hidden="true">
+          <span>{{ windowLabel() }}</span>
+          <span>{{ windowMidLabel() }}</span>
+          <span>Now</span>
+        </div>
       </div>
     } @else {
       <p class="sparkline-empty">No telemetry history</p>
@@ -165,25 +193,56 @@ export function buildSparklinePath(
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: var(--space-2);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
     }
 
-    .capacity-marker {
+    .chart-body {
       display: flex;
-      justify-content: flex-end;
-      margin-bottom: var(--space-1);
+      align-items: stretch;
+      gap: var(--space-2);
+      height: 80px;
+    }
+
+    .y-axis {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: flex-end;
       font-family: var(--font-family-mono);
       font-size: var(--font-size-small);
       color: var(--text-muted);
+      min-width: 44px;
+      padding: 2px 0;
+      user-select: none;
+    }
+
+    .chart-canvas {
+      flex: 1;
+      position: relative;
+      min-width: 0;
     }
 
     .sparkline-svg {
       display: block;
       width: 100%;
-      height: 80px;
+      height: 100%;
       overflow: visible;
     }
 
     .capacity-line {
+      stroke: var(--divider);
+      stroke-width: 1px;
+    }
+
+    .mid-line {
+      stroke: var(--divider);
+      stroke-width: 1px;
+      opacity: 0.6;
+    }
+
+    .base-line {
       stroke: var(--divider);
       stroke-width: 1px;
     }
@@ -193,6 +252,16 @@ export function buildSparklinePath(
       stroke-width: 2px;
       stroke-linecap: round;
       stroke-linejoin: round;
+    }
+
+    .time-axis {
+      display: flex;
+      justify-content: space-between;
+      padding-left: calc(44px + var(--space-2));
+      font-family: var(--font-family-mono);
+      font-size: var(--font-size-small);
+      color: var(--text-muted);
+      user-select: none;
     }
 
     .sparkline-empty {
@@ -216,6 +285,29 @@ export class Sparkline {
   protected readonly width = SPARKLINE_WIDTH;
   protected readonly viewBox = `0 0 ${SPARKLINE_WIDTH} ${SPARKLINE_HEIGHT}`;
   protected readonly capacityY = capacityLineY(SPARKLINE_HEIGHT);
+  protected readonly midY = Number(
+    ((SPARKLINE_HEIGHT + this.capacityY) / 2).toFixed(2),
+  );
+
+  protected readonly halfCapacity = computed(() =>
+    Math.round(this.capacityMbps() / 2),
+  );
+
+  protected readonly windowLabel = computed(() => {
+    const sec = Math.round(this.windowMs() / 1000);
+    if (sec >= 60) {
+      return `-${Math.round(sec / 60)}m`;
+    }
+    return `-${sec}s`;
+  });
+
+  protected readonly windowMidLabel = computed(() => {
+    const sec = Math.round(this.windowMs() / 2000);
+    if (sec >= 60) {
+      return `-${Number((sec / 60).toFixed(1))}m`;
+    }
+    return `-${sec}s`;
+  });
 
   protected readonly path = computed(() =>
     buildSparklinePath(this.samples(), this.capacityMbps(), {

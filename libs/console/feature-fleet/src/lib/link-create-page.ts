@@ -46,6 +46,7 @@ import {
       [mode]="mode"
       [serverIssues]="issues()"
       [pending]="pending()"
+      cancelLink="/links"
       (submitted)="onSubmit($event)"
     />
   `,
@@ -59,7 +60,12 @@ import {
 
     .unreachable {
       margin: 0 0 var(--space-3);
+      padding: var(--space-2) var(--space-3);
+      background: var(--surface-raised);
+      border: 1px solid var(--status-down);
+      border-radius: var(--radius);
       color: var(--status-down);
+      font-weight: var(--font-weight-medium);
     }
   `,
 })

@@ -7,6 +7,7 @@ import {
   output,
   signal,
 } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import {
   bandSchema,
   linkCreateSchema,
@@ -84,6 +85,7 @@ const CHANNEL_WIDTH_OPTIONS: readonly ChannelWidthMhz[] = [20, 40, 80];
 @Component({
   selector: 'lib-link-form',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink],
   template: `
     <form (submit)="onSubmit($event)">
       <div class="field" data-field="name">
@@ -215,7 +217,14 @@ const CHANNEL_WIDTH_OPTIONS: readonly ChannelWidthMhz[] = [20, 40, 80];
         }
       </div>
 
-      <button type="submit" [disabled]="pending()">{{ submitLabel() }}</button>
+      <div class="form-actions">
+        <button type="submit" [disabled]="pending()">
+          {{ submitLabel() }}
+        </button>
+        @if (cancelLink(); as link) {
+          <a [routerLink]="link" class="cancel-link">Cancel</a>
+        }
+      </div>
     </form>
   `,
   styles: `
@@ -265,8 +274,14 @@ const CHANNEL_WIDTH_OPTIONS: readonly ChannelWidthMhz[] = [20, 40, 80];
       font-size: var(--font-size-small);
     }
 
+    .form-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      margin-top: var(--space-1);
+    }
+
     button {
-      align-self: start;
       padding: var(--space-2) var(--space-3);
       background: var(--accent);
       color: var(--surface-raised);
@@ -280,6 +295,18 @@ const CHANNEL_WIDTH_OPTIONS: readonly ChannelWidthMhz[] = [20, 40, 80];
       opacity: 0.6;
       cursor: not-allowed;
     }
+
+    .cancel-link {
+      color: var(--text-muted);
+      font-weight: var(--font-weight-medium);
+      text-decoration: none;
+      font-size: var(--font-size-body);
+    }
+
+    .cancel-link:hover {
+      color: var(--text-primary);
+      text-decoration: underline;
+    }
   `,
 })
 export class LinkForm {
@@ -287,6 +314,7 @@ export class LinkForm {
   /** Set by the routed page after a Server rejection — the other half of the one `issueFor` lookup. */
   readonly serverIssues = input<readonly FieldIssue[]>([]);
   readonly pending = input<boolean>(false);
+  readonly cancelLink = input<string | readonly string[] | null>(null);
   /** A value that passed client-side validation, for the page to send. Never emitted for an invalid value. */
   readonly submitted = output<LinkCreate>();
 

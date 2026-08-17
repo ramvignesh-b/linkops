@@ -256,26 +256,37 @@ import { isNotFoundError } from './is-not-found';
 
     .header-actions {
       display: flex;
+      align-items: center;
       gap: var(--space-2);
       margin-top: var(--space-2);
     }
 
     .edit-action {
+      display: inline-flex;
+      align-items: center;
+      padding: var(--space-1) var(--space-2);
+      background: var(--surface-raised);
       color: var(--accent);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
       font-weight: var(--font-weight-medium);
       text-decoration: none;
     }
 
     .edit-action:hover {
-      text-decoration: underline;
+      border-color: var(--accent);
+      text-decoration: none;
     }
 
     .delete-action {
+      display: inline-flex;
+      align-items: center;
       padding: var(--space-1) var(--space-2);
       background: transparent;
       color: var(--status-down);
       border: 1px solid var(--status-down);
       border-radius: var(--radius);
+      font-weight: var(--font-weight-medium);
       cursor: pointer;
     }
 
@@ -315,6 +326,7 @@ import { isNotFoundError } from './is-not-found';
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: var(--space-3);
+      min-width: 0;
     }
 
     .card {
@@ -322,6 +334,7 @@ import { isNotFoundError } from './is-not-found';
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: var(--space-3);
+      min-width: 0;
     }
 
     .property-list {
@@ -335,6 +348,7 @@ import { isNotFoundError } from './is-not-found';
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: var(--space-2);
       padding-bottom: var(--space-1);
       border-bottom: 1px solid var(--divider);
     }
@@ -347,12 +361,14 @@ import { isNotFoundError } from './is-not-found';
     dt {
       color: var(--text-muted);
       font-size: var(--font-size-small);
+      flex-shrink: 0;
     }
 
     dd {
       margin: 0;
       font-weight: var(--font-weight-medium);
       text-align: right;
+      min-width: 0;
     }
 
     .mono-value {
@@ -446,12 +462,12 @@ export class LinkDetailPage {
 
   protected readonly rssi = computed(() => {
     const s = this.latestSample();
-    return s !== null ? `${s.rssiDbm} dBm` : '—';
+    return s !== null ? `${Number(s.rssiDbm.toFixed(1))} dBm` : '—';
   });
 
   protected readonly snr = computed(() => {
     const s = this.latestSample();
-    return s !== null ? `${s.snrDb} dB` : '—';
+    return s !== null ? `${Number(s.snrDb.toFixed(1))} dB` : '—';
   });
 
   protected readonly currentThroughput = computed(() => {

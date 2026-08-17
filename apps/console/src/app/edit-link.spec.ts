@@ -247,4 +247,40 @@ describe('editing a Link, and resolving a version conflict', () => {
 
     finish();
   });
+
+  it('allows navigating back to the link from the edit form without saving', async () => {
+    const { fixture, http, router } = await bootConsole(
+      '/links/lnk_alpha/edit',
+    );
+    answerFirstPaint(http, [alpha], summary());
+    http
+      .expectOne('/api/links/lnk_alpha')
+      .flush({ link: alpha, latestSample: null });
+    await fixture.whenStable();
+
+    const backBreadcrumb = fixture.nativeElement.querySelector(
+      'lib-fleet-breadcrumb a.back-link',
+    );
+    expect(backBreadcrumb.getAttribute('href')).toBe('/links/lnk_alpha');
+    expect(backBreadcrumb.textContent).toContain('Back to Link');
+
+    const cancelLink = fixture.nativeElement.querySelector('a.cancel-link');
+    expect(cancelLink.getAttribute('href')).toBe('/links/lnk_alpha');
+
+    // Clicking cancel navigates back to the Link detail view
+    cancelLink.click();
+    await fixture.whenStable();
+    expect(router.url).toBe('/links/lnk_alpha');
+
+    http.expectOne('/api/links/lnk_alpha').flush({
+      link: alpha,
+      latestSample: null,
+    });
+    http
+      .expectOne((request) => request.url === '/api/links/lnk_alpha/telemetry')
+      .flush([]);
+    await fixture.whenStable();
+
+    finish();
+  });
 });

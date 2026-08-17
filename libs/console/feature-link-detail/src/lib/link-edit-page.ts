@@ -55,7 +55,7 @@ interface Conflict {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FleetBreadcrumb, LinkConflict, LinkForm],
   template: `
-    <lib-fleet-breadcrumb />
+    <lib-fleet-breadcrumb [target]="['/links', id()]" label="← Back to Link" />
 
     <h1>Edit Link</h1>
 
@@ -85,6 +85,7 @@ interface Conflict {
           [mode]="formMode"
           [serverIssues]="issues()"
           [pending]="pending()"
+          [cancelLink]="['/links', id()]"
           (submitted)="onSubmit($event)"
         />
       }
@@ -102,7 +103,12 @@ interface Conflict {
 
     .unreachable {
       margin: 0 0 var(--space-3);
+      padding: var(--space-2) var(--space-3);
+      background: var(--surface-raised);
+      border: 1px solid var(--status-down);
+      border-radius: var(--radius);
       color: var(--status-down);
+      font-weight: var(--font-weight-medium);
     }
 
     .not-found {
