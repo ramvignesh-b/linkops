@@ -11,7 +11,7 @@ starts and runs the Assistant on the stub, and an incoherent one fails
 the failure happens at boot, and `ServerConfigService` is the one typed
 place every other library reads the result through.
 
-See the root [README](../../../README.md#configuration) for the variable
+See the root [README](../../../README.md#4-configuration) for the variable
 table and the [`.env.example`](../../../.env.example) file.
 
 ## Running unit tests
