@@ -20,7 +20,7 @@ Rather than fighting the linter, disabling the rule, or accepting a flawed desig
 - **State & Client (`console/data-access`):** The session state and HTTP client logic were placed in the data-access library. The Fleet route's main component can cleanly inject this state and pass it down to the UI components.
 
 ## Bundle Size Impact
-Splitting the code into `ui` and `data-access` does **not** increase the initial render-blocking bundle size. The physical folder structure does not dictate chunking. Because the Fleet view wraps the Assistant panel in an Angular `@defer` block, the bundler automatically splits the imported `ui` and `data-access` code into a lazy-loaded chunk. This chunk is only downloaded when the operator explicitly opens the panel, preserving the strict 650 kB bundle budget.
+Splitting the code into `ui` and `data-access` does **not** increase the initial render-blocking bundle size. The physical folder structure does not dictate chunking. Because the Fleet view wraps the Assistant panel in an Angular `@defer` block, the bundler automatically splits the imported `ui` and `data-access` code into a lazy-loaded chunk. This chunk is only downloaded when the operator explicitly opens the panel, preserving the strict 500 kB bundle budget.
 
 ## Testing Strategy
 The integration tests for the Assistant (`assistant.spec.ts`) reside in `apps/console/src/app/` rather than in a library. This is because they rely on `bootConsole` to test the entire application composition end-to-end, rather than testing isolated library logic. 
