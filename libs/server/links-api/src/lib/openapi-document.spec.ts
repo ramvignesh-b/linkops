@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { SchemaObject } from '@nestjs/swagger/dist/interfaces/open-api-spec.interface';
 import { ServerLinksApiModule } from './server-links-api.module';
-import { buildOpenApiDocument } from './openapi-document';
+import { buildOpenApiDocument, mountApiExplorer } from './openapi-document';
 
 /**
  * Boots the real module — same as `server-links-api.module.spec.ts` — so the
@@ -96,14 +96,38 @@ describe('buildOpenApiDocument', () => {
     ).toMatch(/diagnostic/i);
   });
 
-  it('never mounts the interactive Swagger explorer', async () => {
+  it('never mounts the interactive Swagger explorer on its own', async () => {
     buildOpenApiDocument(app());
 
     // 'api' is the customary `SwaggerModule.setup(path, app, document)` mount
-    // point. Building the document must never register it — the explorer
-    // stays unmounted until ticket 05's config flag lands.
+    // point. Building the document must never register it on its own — the
+    // explorer only mounts when `main.ts` calls `mountApiExplorer`, gated
+    // behind `SWAGGER_UI_ENABLED`.
     const response = await request(app().getHttpServer()).get('/api');
 
     expect(response.status).toBe(404);
+  });
+
+  // A fresh app, not `useApp()`'s already-`init()`ed one: `mountApiExplorer`
+  // has to register its route before `app.init()` runs, the same way
+  // `main.ts` calls it between `NestFactory.create()` and `app.listen()`.
+  // `init()` is what registers Nest's own catch-all "not found" handler as
+  // the Express app's terminal middleware — a route added after that point
+  // is present in the router's stack but never reached, because that
+  // handler always answers first.
+  it('mounts the interactive Swagger explorer when mountApiExplorer is called before init', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [ServerLinksApiModule],
+    }).compile();
+    const freshApp = moduleRef.createNestApplication();
+
+    const document = buildOpenApiDocument(freshApp);
+    mountApiExplorer(freshApp, document);
+    await freshApp.init();
+
+    const response = await request(freshApp.getHttpServer()).get('/api');
+    await freshApp.close();
+
+    expect(response.status).not.toBe(404);
   });
 });

@@ -1,18 +1,21 @@
 import { Module } from '@nestjs/common';
 import {
+  ServerConfigModule,
+  ServerConfigService,
+} from '@linkops/server/config';
+import {
   LINK_REPOSITORY,
   ServerLinksDataAccessModule,
   type LinkRepository,
 } from '@linkops/server/links-data-access';
 import {
   ServerTelemetryModule,
-  systemClock,
   TELEMETRY_PORT,
   type TelemetryPort,
 } from '@linkops/server/telemetry';
 import { A2UI_AGENT } from './a2ui-agent.token';
 import { AgentUiController } from './agent-ui.controller';
-import { StubTriageAgent } from './stub-triage-agent';
+import { selectA2uiAgent } from './select-a2ui-agent';
 
 /**
  * The Assistant's HTTP surface and the agent behind it. It reads the Roster
@@ -27,17 +30,25 @@ import { StubTriageAgent } from './stub-triage-agent';
  * modules are wired — `apps/api` — which is where that test lives.
  */
 @Module({
-  imports: [ServerLinksDataAccessModule, ServerTelemetryModule],
+  imports: [
+    ServerLinksDataAccessModule,
+    ServerTelemetryModule,
+    ServerConfigModule,
+  ],
   controllers: [AgentUiController],
   providers: [
     {
       provide: A2UI_AGENT,
-      // The seam configuration selects an implementation at. Today there is
-      // one, and it is the one that runs for someone who cloned this
-      // repository and holds no credentials.
-      useFactory: (repository: LinkRepository, telemetry: TelemetryPort) =>
-        new StubTriageAgent(repository, telemetry, systemClock),
-      inject: [LINK_REPOSITORY, TELEMETRY_PORT],
+      // `selectA2uiAgent` throws for a provider this repository names but
+      // does not ship — that throw runs here, at DI instantiation time, so
+      // an unshippable choice fails the boot rather than falling back to
+      // the stub silently.
+      useFactory: (
+        repository: LinkRepository,
+        telemetry: TelemetryPort,
+        config: ServerConfigService,
+      ) => selectA2uiAgent(config.assistantProvider, repository, telemetry),
+      inject: [LINK_REPOSITORY, TELEMETRY_PORT, ServerConfigService],
     },
   ],
 })
