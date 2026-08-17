@@ -1,5 +1,4 @@
 import { Test } from '@nestjs/testing';
-import { DEFAULT_GEMINI_MODEL } from './environment.schema';
 import { ServerConfigModule } from './server-config.module';
 import { ServerConfigService } from './server-config.service';
 
@@ -40,21 +39,6 @@ describe('ServerConfigModule', () => {
     expect(config.assistantProvider).toBe('stub');
     expect(config.assistantProviderKey).toBeUndefined();
     expect(config.assistantModel).toBeUndefined();
-
-    await moduleRef.close();
-  });
-
-  it('resolves the default gemini model when ASSISTANT_PROVIDER=gemini and ASSISTANT_MODEL is unset', async () => {
-    vi.stubEnv('ASSISTANT_PROVIDER', 'gemini');
-    vi.stubEnv('ASSISTANT_PROVIDER_KEY', 'sk-test-key');
-
-    const moduleRef = await Test.createTestingModule({
-      imports: [ServerConfigModule],
-    }).compile();
-
-    const config = moduleRef.get(ServerConfigService);
-
-    expect(config.assistantModel).toBe(DEFAULT_GEMINI_MODEL);
 
     await moduleRef.close();
   });

@@ -11,9 +11,6 @@ export const assistantProviderSchema = z.enum(['stub', 'gemini', 'anthropic']);
 
 export type AssistantProvider = z.infer<typeof assistantProviderSchema>;
 
-/** The default model used when ASSISTANT_PROVIDER=gemini and ASSISTANT_MODEL is unset. */
-export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
-
 /**
  * A string env var carrying exactly `"true"` or `"false"`, defaulting off,
  * transformed to a real boolean. `z.coerce.boolean()` was rejected here on

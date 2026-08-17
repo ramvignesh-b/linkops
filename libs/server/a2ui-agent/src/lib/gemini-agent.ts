@@ -7,10 +7,12 @@ import {
   type A2uiRequest,
 } from '@linkops/shared/a2ui-protocol';
 import { withDerivedStatus, type Link } from '@linkops/shared/domain';
-import { DEFAULT_GEMINI_MODEL } from '@linkops/server/config';
 import type { LinkRepository } from '@linkops/server/links-data-access';
 import type { Clock, TelemetryPort } from '@linkops/server/telemetry';
 import type { A2uiAgent } from './a2ui-agent';
+
+/** The default model used when no model identifier is provided to GeminiAgent. */
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
 import {
   GEMINI_TRIAGE_JSON_SCHEMA,
   geminiTriageSchema,
