@@ -1,8 +1,22 @@
-# 14. The Assistant panel is packaged as a Module Federation remote
+# 15. The Assistant panel is packaged as a Module Federation remote
 
 ## Status
 
-Accepted.
+Accepted. Implements and extends
+[ADR-0014](./0014-programmatic-component-remotes-for-module-federation.md),
+which chose programmatic Component Remotes over the Angular Router for this
+integration. That choice holds exactly as recorded; this ADR covers what
+implementing it actually decided — which federation tooling, which library
+the panel moves into, what has to be shared and why, and what the bundle
+budget means afterwards.
+
+One correction to ADR-0014's sketch: it names `@nx/angular/mf`'s
+`loadRemoteModule`. That package's Angular Module Federation support is
+deprecated on this Nx version (see "Considered Options" below), so the
+implementation uses `@angular-architects/native-federation`'s
+`loadRemoteModule` instead. The shape ADR-0014 describes — a local wrapper
+fetching the remote, `NgComponentOutlet`, an explicit spinner, all inside
+the host's existing `@defer` block — is unchanged.
 
 ## Decision
 

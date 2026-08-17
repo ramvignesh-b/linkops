@@ -97,7 +97,7 @@ jobs:
       # measured for real against a real browser landing on `/`, and
       # reports the shared-dependency cost separately rather than folding
       # it in. See tools/verify-bundle-budget.mjs's header comment and
-      # ADR-0014's "Consequences" for the two wrong attempts this replaced.
+      # ADR-0015's "Consequences" for the two wrong attempts this replaced.
       - name: Verify bundle budget
         run: node tools/verify-bundle-budget.mjs dist/apps/console/browser 650 1000
 
@@ -152,7 +152,7 @@ jobs:
               echo "**Budget status:** ${BADGE}"
               echo ""
               echo "#### 🧱 Shared infrastructure (reported, not gated)"
-              echo "Native Federation's shared-dependency bundles — one-time, content-hashed, cacheable across every visit and every micro-frontend on this origin. Not something this app's own code controls; see [ADR-0014](../../blob/main/docs/adr/0014-assistant-as-a-module-federation-remote.md)."
+              echo "Native Federation's shared-dependency bundles — one-time, content-hashed, cacheable across every visit and every micro-frontend on this origin. Not something this app's own code controls; see [ADR-0015](../../blob/main/docs/adr/0015-assistant-as-a-module-federation-remote.md)."
               echo ""
               echo "| Type | Asset | Raw | Gzip |"
               echo "| :--- | :--- | ---: | ---: |"

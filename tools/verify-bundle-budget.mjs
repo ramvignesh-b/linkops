@@ -21,7 +21,7 @@
  *   step Angular's budget check never sees. Reported, not gated: it is a
  *   one-time, content-hashed, cacheable cost this app pays once per
  *   browser, not per visit, and not one a Console feature change can
- *   shrink by itself — see ADR-0014.
+ *   shrink by itself — see ADR-0015.
  *
  * Both raw (on disk) and gzip (actually on the wire, for a browser that
  * sends `Accept-Encoding: gzip`, which every real one does) are measured
@@ -34,7 +34,7 @@
  * from asking a real browser, never from assuming a chunk is optional
  * because of its name. A prior version of this script did assume that,
  * and was wrong about the one route the app redirects to by default. See
- * git history and ADR-0014's "Consequences" for the full account of what
+ * git history and ADR-0015's "Consequences" for the full account of what
  * was tried and ruled out before landing here.
  *
  * Requires the Chromium binary Playwright drives: `npx playwright install
