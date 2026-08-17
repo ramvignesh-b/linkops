@@ -37,7 +37,7 @@ export class AgentUiController {
     description:
       'VALIDATION_FAILED — the body is not an Assistant request. A2UI_INVALID_PAYLOAD — an Action names a Surface, Link or Remediation the Assistant does not recognise. Error envelope as documented on every other endpoint.',
   })
-  respond(@Body() request: A2uiRequestDto): A2uiEnvelope {
-    return this.agent.respond(request);
+  async respond(@Body() request: A2uiRequestDto): Promise<A2uiEnvelope> {
+    return await this.agent.respond(request);
   }
 }

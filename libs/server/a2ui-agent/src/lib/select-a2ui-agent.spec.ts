@@ -1,40 +1,9 @@
-import type {
-  FleetSummary,
-  LinkId,
-  TelemetrySample,
-} from '@linkops/shared/domain';
-import type {
-  LinkRecord,
-  LinkRepository,
-} from '@linkops/server/links-data-access';
-import type { TelemetryPort } from '@linkops/server/telemetry';
+import {
+  fakeLinkRepository as repository,
+  fakeTelemetryPort as telemetry,
+} from './agent-test-doubles.fixture';
 import { StubTriageAgent } from './stub-triage-agent';
 import { selectA2uiAgent } from './select-a2ui-agent';
-
-const repository: LinkRepository = {
-  findAll: (): LinkRecord[] => [],
-  findById: () => undefined,
-  create: () => {
-    throw new Error('not used by this test');
-  },
-  update: () => {
-    throw new Error('not used by this test');
-  },
-  delete: () => false,
-  count: () => 0,
-};
-
-const telemetry: TelemetryPort = {
-  latestSample: (): TelemetrySample | null => null,
-  latestSamples: (): ReadonlyMap<LinkId, TelemetrySample> => new Map(),
-  history: () => [],
-  summary: (): FleetSummary => {
-    throw new Error('not used by this test');
-  },
-  dropLink: () => {
-    // no-op
-  },
-};
 
 /**
  * The seam ticket `41` exists for: an `AssistantProvider` value in, an
@@ -48,9 +17,12 @@ describe('selectA2uiAgent', () => {
     expect(agent).toBeInstanceOf(StubTriageAgent);
   });
 
-  it('refuses the "model" provider — the seam exists, but no model client ships here', () => {
-    expect(() => selectA2uiAgent('model', repository, telemetry)).toThrow(
-      /no model client|does not ship/i,
-    );
-  });
+  it.each(['gemini', 'anthropic'] as const)(
+    'refuses the "%s" provider — the seam exists, but no model client ships here',
+    (provider) => {
+      expect(() => selectA2uiAgent(provider, repository, telemetry)).toThrow(
+        /no model client|does not ship/i,
+      );
+    },
+  );
 });

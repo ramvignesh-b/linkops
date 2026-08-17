@@ -42,7 +42,7 @@ describe('ServerConfigModule', () => {
   });
 
   it('rejects compilation on an incoherent environment, naming the variable', async () => {
-    vi.stubEnv('ASSISTANT_PROVIDER', 'model');
+    vi.stubEnv('ASSISTANT_PROVIDER', 'gemini');
 
     await expect(
       Test.createTestingModule({ imports: [ServerConfigModule] }).compile(),
@@ -52,7 +52,7 @@ describe('ServerConfigModule', () => {
   it('resolves a coherent, non-default environment', async () => {
     vi.stubEnv('PORT', '8080');
     vi.stubEnv('SWAGGER_UI_ENABLED', 'true');
-    vi.stubEnv('ASSISTANT_PROVIDER', 'model');
+    vi.stubEnv('ASSISTANT_PROVIDER', 'anthropic');
     vi.stubEnv('ASSISTANT_PROVIDER_KEY', 'sk-dummy');
 
     const moduleRef = await Test.createTestingModule({
@@ -63,7 +63,7 @@ describe('ServerConfigModule', () => {
 
     expect(config.port).toBe(8080);
     expect(config.swaggerUiEnabled).toBe(true);
-    expect(config.assistantProvider).toBe('model');
+    expect(config.assistantProvider).toBe('anthropic');
     expect(config.assistantProviderKey).toBe('sk-dummy');
 
     await moduleRef.close();

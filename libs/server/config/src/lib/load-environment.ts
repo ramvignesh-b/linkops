@@ -54,7 +54,8 @@ function describeIssues(
  * coherent and the application starts on the stub. Three things are
  * incoherent, each named in the thrown error rather than left to a stack
  * trace: a variable present but invalid, `ASSISTANT_PROVIDER_KEY` missing
- * while `ASSISTANT_PROVIDER=model`, and an `ASSISTANT_`-prefixed variable
+ * while `ASSISTANT_PROVIDER` selects a model provider, and an
+ * `ASSISTANT_`-prefixed variable
  * this schema does not read at all.
  *
  * Called twice in practice, both throws landing the same way: once by

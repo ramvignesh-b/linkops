@@ -125,14 +125,19 @@ describe('the provider seam', () => {
     vi.unstubAllEnvs();
   });
 
-  it('fails to boot when ASSISTANT_PROVIDER selects the unshipped model provider, with its key present and coherent', async () => {
-    vi.stubEnv('ASSISTANT_PROVIDER', 'model');
-    vi.stubEnv('ASSISTANT_PROVIDER_KEY', 'sk-dummy');
+  it.each(['gemini', 'anthropic'] as const)(
+    'fails to boot when ASSISTANT_PROVIDER selects the unshipped %s provider, with its key present and coherent',
+    async (provider) => {
+      vi.stubEnv('ASSISTANT_PROVIDER', provider);
+      vi.stubEnv('ASSISTANT_PROVIDER_KEY', 'sk-dummy');
 
-    await expect(
-      Test.createTestingModule({ imports: [ServerA2uiAgentModule] }).compile(),
-    ).rejects.toThrow(/no model client ships/);
-  });
+      await expect(
+        Test.createTestingModule({
+          imports: [ServerA2uiAgentModule],
+        }).compile(),
+      ).rejects.toThrow(/no model client ships/);
+    },
+  );
 });
 
 describe('POST /agent/ui', () => {
