@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
 /**
- * The one non-stub provider this repository's schema knows the *name* of.
- * Choosing it is coherent — the key becomes required — but no client for it
- * ships here; selecting it is a boot failure raised where the Assistant
- * module actually builds a provider, not by this schema. See
+ * The two non-stub providers this repository's schema knows the *name* of.
+ * Choosing either is coherent — the key becomes required — but no client for
+ * them ships here; selecting one is a boot failure raised where the
+ * Assistant module actually builds a provider, not by this schema. See
  * `selectA2uiAgent` in `@linkops/server/a2ui-agent`.
  */
-export const assistantProviderSchema = z.enum(['stub', 'model']);
+export const assistantProviderSchema = z.enum(['stub', 'gemini', 'anthropic']);
 
 export type AssistantProvider = z.infer<typeof assistantProviderSchema>;
 
@@ -48,12 +48,11 @@ export const environmentShapeSchema = z.object({
  */
 export const environmentSchema = environmentShapeSchema.superRefine(
   (value, ctx) => {
-    if (value.ASSISTANT_PROVIDER === 'model' && !value.ASSISTANT_PROVIDER_KEY) {
+    if (value.ASSISTANT_PROVIDER !== 'stub' && !value.ASSISTANT_PROVIDER_KEY) {
       ctx.addIssue({
         code: 'custom',
         path: ['ASSISTANT_PROVIDER_KEY'],
-        message:
-          'ASSISTANT_PROVIDER_KEY is required when ASSISTANT_PROVIDER=model',
+        message: `ASSISTANT_PROVIDER_KEY is required when ASSISTANT_PROVIDER=${value.ASSISTANT_PROVIDER}`,
       });
     }
   },

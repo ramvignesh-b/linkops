@@ -734,8 +734,8 @@ any of these locally; every value there is a placeholder, never a real key.
 |---|---|---|
 | `PORT` | `3000` | The port the API listens on |
 | `SWAGGER_UI_ENABLED` | `false` | Mounts the interactive Swagger explorer at `GET /api` when `true`. `GET /api/openapi.json` is served either way — see [OpenAPI document](#openapi-document) |
-| `ASSISTANT_PROVIDER` | `stub` | `stub` needs no key and is what ships in this repository. `model` selects a real model client behind the `A2uiAgent` seam (`libs/server/a2ui-agent`) — see below |
-| `ASSISTANT_PROVIDER_KEY` | *(none)* | Required only when `ASSISTANT_PROVIDER=model`. Never logged and never sent to the Console — the Console has no knowledge that a provider concept exists at all |
+| `ASSISTANT_PROVIDER` | `stub` | `stub` needs no key and is what ships in this repository. `gemini` and `anthropic` each select a real model client behind the `A2uiAgent` seam (`libs/server/a2ui-agent`) — see below |
+| `ASSISTANT_PROVIDER_KEY` | *(none)* | Required only when `ASSISTANT_PROVIDER` is `gemini` or `anthropic`. Never logged and never sent to the Console — the Console has no knowledge that a provider concept exists at all |
 
 **No credentials, no problem.** An empty environment is coherent by
 construction — nothing here is *required* — which is what makes "clone,
@@ -746,21 +746,23 @@ file ever existing.
 naming what caused it rather than leaving a stack trace to read:
 
 - a variable present but invalid — `PORT=nope`, `SWAGGER_UI_ENABLED=yes`;
-- `ASSISTANT_PROVIDER=model` with `ASSISTANT_PROVIDER_KEY` absent or empty —
-  the two are coherent together or not at all;
+- `ASSISTANT_PROVIDER=gemini` or `ASSISTANT_PROVIDER=anthropic` with
+  `ASSISTANT_PROVIDER_KEY` absent or empty — the two are coherent together
+  or not at all;
 - an unrecognised variable that starts with `ASSISTANT_` — the near-miss
   that would otherwise leave an operator on the stub while believing they
   had configured a model, e.g. a typo'd key name that the schema silently
   never reads.
 
-**Choosing the model provider is a boot failure, not a silent downgrade.**
-`ASSISTANT_PROVIDER=model` with its key present is coherent — the schema
-accepts it — but no model client ships in this repository, and the seam
-(`selectA2uiAgent` in `libs/server/a2ui-agent`) refuses to fall back to the
-stub quietly. Silently downgrading would make every rule above pointless:
-the one thing an operator explicitly asked for would be the one thing that
-silently did not happen. The boot fails instead, with a message naming the
-seam and pointing at `ASSISTANT_PROVIDER`.
+**Choosing a model provider is a boot failure, not a silent downgrade.**
+`ASSISTANT_PROVIDER=gemini` or `=anthropic` with its key present is
+coherent — the schema accepts it — but no model client ships in this
+repository yet, and the seam (`selectA2uiAgent` in `libs/server/a2ui-agent`)
+refuses to fall back to the stub quietly. Silently downgrading would make
+every rule above pointless: the one thing an operator explicitly asked for
+would be the one thing that silently did not happen. The boot fails
+instead, with a message naming the seam and pointing at
+`ASSISTANT_PROVIDER`.
 
 ## Development
 

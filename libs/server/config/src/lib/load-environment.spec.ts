@@ -49,37 +49,43 @@ describe('loadEnvironment', () => {
     );
   });
 
-  it('names ASSISTANT_PROVIDER_KEY when the model provider is chosen and the key is absent', () => {
-    expect(() => loadEnvironment({ ASSISTANT_PROVIDER: 'model' })).toThrow(
-      /ASSISTANT_PROVIDER_KEY/,
-    );
-  });
+  it.each(['gemini', 'anthropic'] as const)(
+    'names ASSISTANT_PROVIDER_KEY when the %s provider is chosen and the key is absent',
+    (provider) => {
+      expect(() => loadEnvironment({ ASSISTANT_PROVIDER: provider })).toThrow(
+        /ASSISTANT_PROVIDER_KEY/,
+      );
+    },
+  );
 
   it('names ASSISTANT_PROVIDER_KEY when it is present but empty', () => {
     expect(() =>
       loadEnvironment({
-        ASSISTANT_PROVIDER: 'model',
+        ASSISTANT_PROVIDER: 'gemini',
         ASSISTANT_PROVIDER_KEY: '',
       }),
     ).toThrow(/ASSISTANT_PROVIDER_KEY/);
   });
 
-  it('accepts the model provider once its key is present — selecting an unshipped provider is a different failure, raised where the provider is actually selected', () => {
-    const environment = loadEnvironment({
-      ASSISTANT_PROVIDER: 'model',
-      ASSISTANT_PROVIDER_KEY: 'sk-dummy-does-not-matter-here',
-    });
+  it.each(['gemini', 'anthropic'] as const)(
+    'accepts the %s provider once its key is present — selecting an unshipped provider is a different failure, raised where the provider is actually selected',
+    (provider) => {
+      const environment = loadEnvironment({
+        ASSISTANT_PROVIDER: provider,
+        ASSISTANT_PROVIDER_KEY: 'sk-dummy-does-not-matter-here',
+      });
 
-    expect(environment.ASSISTANT_PROVIDER).toBe('model');
-    expect(environment.ASSISTANT_PROVIDER_KEY).toBe(
-      'sk-dummy-does-not-matter-here',
-    );
-  });
+      expect(environment.ASSISTANT_PROVIDER).toBe(provider);
+      expect(environment.ASSISTANT_PROVIDER_KEY).toBe(
+        'sk-dummy-does-not-matter-here',
+      );
+    },
+  );
 
   it('stops the boot on an unknown variable matching the ASSISTANT_ prefix, naming it — the near-miss a mistyped key name would otherwise fall through as', () => {
     expect(() =>
       loadEnvironment({
-        ASSISTANT_PROVIDER: 'model',
+        ASSISTANT_PROVIDER: 'gemini',
         ASSISTANT_PROVIDR_KEY: 'sk-typo',
       }),
     ).toThrow(/ASSISTANT_PROVIDR_KEY/);
@@ -88,7 +94,7 @@ describe('loadEnvironment', () => {
   it('never echoes the key value into its failure message', () => {
     try {
       loadEnvironment({
-        ASSISTANT_PROVIDER: 'model',
+        ASSISTANT_PROVIDER: 'gemini',
         ASSISTANT_PROVIDR_KEY: 'sk-super-secret-value',
       });
       throw new Error('expected loadEnvironment to throw');

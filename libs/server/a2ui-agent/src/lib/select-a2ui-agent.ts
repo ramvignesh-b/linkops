@@ -33,7 +33,8 @@ export function selectA2uiAgent(
   switch (provider) {
     case 'stub':
       return new StubTriageAgent(repository, telemetry, systemClock);
-    case 'model':
+    case 'gemini':
+    case 'anthropic':
       throw new A2uiProviderNotShippedError(provider);
   }
 }

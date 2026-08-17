@@ -47,7 +47,7 @@ export class StubTriageAgent implements A2uiAgent {
     private readonly clock: Clock,
   ) {}
 
-  respond(request: A2uiRequest): A2uiEnvelope {
+  async respond(request: A2uiRequest): Promise<A2uiEnvelope> {
     if (request.kind === 'act') {
       return this.answerAction(request);
     }
