@@ -787,3 +787,16 @@ The Console is then at <http://localhost:4200> and the API at
 <http://localhost:3000>; the dev server proxies `/api` to it, so the Console
 calls the same relative paths in development that it would served next to the
 API.
+
+## 12. Decisions, gaps and next steps
+
+**Where this design breaks at 10,000 links**
+At 10,000 links, the system pushes roughly 1MB of JSON over SSE every second. While an 8 Mbps stream is not a network bandwidth problem on a modern LAN, it creates a fatal bottleneck in the **browser's main thread**. 
+
+1. **DOM & Rendering:** Rendering 10,000 table rows updated at 1 Hz will freeze the tab. 
+2. **JSON Parsing & GC Churn:** Parsing a 1MB payload and allocating 10,000 objects every second causes heavy garbage collection stutter.
+
+**What I would do next:**
+To fix the DOM freeze, I would implement **Virtual Scrolling** (`@angular/cdk/scrolling`) so only the ~30 visible rows exist in the DOM at any given time (Note: `@defer` is not the right tool here, as it lazy-loads JS chunks rather than recycling DOM nodes). 
+
+To fix the GC churn, I would change the stream contract from "push the whole world" to a **viewport-aware subscription**. The client would notify the server which 30 links are currently visible (updating this list instantly on scroll, filter, or sort). The server would then only stream `link.telemetry` and `link.status` events for those specific links. The server would continue to stream the `fleet.summary` event unconditionally every tick, so the KPI header remains accurate for the entire 10,000-link fleet without the client needing the raw data.
