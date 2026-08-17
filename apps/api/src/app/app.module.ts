@@ -6,10 +6,13 @@ import { ServerStreamApiModule } from '@linkops/server/stream-api';
 
 /**
  * `ServerConfigModule` is imported here explicitly, not only transitively
- * through `ServerA2uiAgentModule` — `main.ts` reads `ServerConfigService`
- * off this module's own graph for the port and the explorer flag, and an
- * import that only worked by accident of another module's internals would
- * be a surprise the day that module stops needing it.
+ * through `ServerA2uiAgentModule` — so that compiling `AppModule` alone (as
+ * `app.module.spec.ts`'s boot-behaviour tests do) enforces environment
+ * coherence regardless of which feature module happens to need
+ * `ServerConfigService`. `main.ts` validates the environment itself before
+ * this module is ever touched — see its own top comment — this import is
+ * what makes the same guarantee hold for anything that boots `AppModule`
+ * directly, tests included.
  *
  * The scaffolded `AppController`/`AppService` ("Hello API" at `GET /api`)
  * are gone as of this module: nothing referenced them, no test asserted

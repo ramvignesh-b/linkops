@@ -9,10 +9,19 @@ import {
   buildOpenApiDocument,
   mountApiExplorer,
 } from '@linkops/server/links-api';
-import { ServerConfigService } from '@linkops/server/config';
+import { loadEnvironment } from '@linkops/server/config';
 import { AppModule } from './app/app.module';
 
 async function bootstrap() {
+  // Validated before Nest touches anything. `ServerConfigModule` runs this
+  // same check again at DI-instantiation time — that copy is what makes an
+  // incoherent environment fail `Test.createTestingModule(...).compile()`
+  // too, for any module built out of Nest's own hands — but running it here
+  // first is what keeps a bad environment from ever reaching Nest's Logger
+  // and exception machinery: the failure this prints is the one clean line
+  // in the catch below, not a stack trace through NestFactory's internals.
+  const environment = loadEnvironment();
+
   const app = await NestFactory.create(AppModule);
   // This process never calls app.close() itself — enableShutdownHooks() is
   // what registers the SIGTERM/SIGINT listener that does, on a container
@@ -22,8 +31,6 @@ async function bootstrap() {
   app.enableShutdownHooks();
   const globalPrefix = 'api';
   app.setGlobalPrefix(globalPrefix);
-
-  const config = app.get(ServerConfigService);
 
   // The generated document is always served, no config flag required — see
   // ADR-0006.
@@ -39,21 +46,20 @@ async function bootstrap() {
   // host managing live radio infrastructure than on a developer's laptop.
   // Both this and the raw route above must run before app.listen(), which is
   // what triggers Nest's own init() — see mountApiExplorer's own comment.
-  if (config.swaggerUiEnabled) {
+  if (environment.SWAGGER_UI_ENABLED) {
     mountApiExplorer(app, openApiDocument);
   }
 
-  await app.listen(config.port);
+  await app.listen(environment.PORT);
   Logger.log(
-    `🚀 Application is running on: http://localhost:${config.port}/${globalPrefix}`,
+    `🚀 Application is running on: http://localhost:${environment.PORT}/${globalPrefix}`,
   );
 }
 
 bootstrap().catch((error: unknown) => {
-  // Nest's own Logger is not guaranteed to exist by the time boot fails here
-  // — an incoherent environment fails inside NestFactory.create(), before
-  // the application graph it would log through is built — so this is
-  // console, not Logger, on purpose. See ServerConfigModule.
+  // Nest's own Logger may not exist yet when boot fails this early —
+  // loadEnvironment runs before NestFactory.create() ever touches Nest's own
+  // logging — so this is console, not Logger, on purpose.
   console.error(
     `Failed to start: ${error instanceof Error ? error.message : String(error)}`,
   );
