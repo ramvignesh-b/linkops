@@ -239,6 +239,10 @@ describe('the Assistant endpoint under the application-wide pipe and filter', ()
  * seam in isolation — actually rests on them.
  */
 describe('boot behaviour over the environment', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('yields the stub Assistant from a default (empty) environment', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -250,16 +254,10 @@ describe('boot behaviour over the environment', () => {
   });
 
   it('fails initialisation on an incoherent environment, naming the variable', async () => {
-    const original = process.env['ASSISTANT_PROVIDER'];
-    process.env['ASSISTANT_PROVIDER'] = 'bogus';
+    vi.stubEnv('ASSISTANT_PROVIDER', 'bogus');
 
-    try {
-      await expect(
-        Test.createTestingModule({ imports: [AppModule] }).compile(),
-      ).rejects.toThrow(/ASSISTANT_PROVIDER/);
-    } finally {
-      if (original === undefined) delete process.env['ASSISTANT_PROVIDER'];
-      else process.env['ASSISTANT_PROVIDER'] = original;
-    }
+    await expect(
+      Test.createTestingModule({ imports: [AppModule] }).compile(),
+    ).rejects.toThrow(/ASSISTANT_PROVIDER/);
   });
 });
