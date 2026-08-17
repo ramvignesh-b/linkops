@@ -6,19 +6,13 @@
     <script>
       (function () {
         var path = window.location.pathname;
-        if (!path.endsWith('/')) {
-          var lastSegment = path.substring(path.lastIndexOf('/') + 1);
-          if (!lastSegment.includes('.')) {
-            window.history.replaceState(
-              null,
-              '',
-              path + '/' + window.location.search + window.location.hash,
-            );
-          }
+        var baseHref = '/';
+        if (path !== '/' && path !== '') {
+          baseHref = path.endsWith('/') ? path : path + '/';
         }
+        document.write('<base href="' + baseHref + '" />');
       })();
     </script>
-    <base href="./" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
   </head>
