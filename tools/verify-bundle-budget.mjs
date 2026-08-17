@@ -52,12 +52,12 @@ const [distDir, warnKbArg, errorKbArg] = args.filter((arg) => arg !== '--json');
 
 if (!distDir) {
   console.error(
-    'usage: verify-bundle-budget.mjs <dist-browser-dir> [warnKb=650] [errorKb=1000] [--json]',
+    'usage: verify-bundle-budget.mjs <dist-browser-dir> [warnKb=500] [errorKb=1000] [--json]',
   );
   process.exit(2);
 }
 
-const warnKb = Number(warnKbArg ?? 650);
+const warnKb = Number(warnKbArg ?? 500);
 const errorKb = Number(errorKbArg ?? 1000);
 
 const MIME_TYPES = {

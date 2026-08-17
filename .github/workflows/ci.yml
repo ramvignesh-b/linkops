@@ -99,7 +99,7 @@ jobs:
       # it in. See tools/verify-bundle-budget.mjs's header comment and
       # ADR-0015's "Consequences" for the two wrong attempts this replaced.
       - name: Verify bundle budget
-        run: node tools/verify-bundle-budget.mjs dist/apps/console/browser 650 1000
+        run: node tools/verify-bundle-budget.mjs dist/apps/console/browser 500 1000
 
       - name: Report Bundle Size & Sticky PR Comment
         if: always()
@@ -110,7 +110,7 @@ jobs:
           DIST="dist/apps/console/browser"
 
           if [ -d "$DIST" ]; then
-            REPORT_JSON=$(node tools/verify-bundle-budget.mjs "$DIST" 650 1000 --json)
+            REPORT_JSON=$(node tools/verify-bundle-budget.mjs "$DIST" 500 1000 --json)
             REPORT_FILE=$(mktemp)
 
             STATUS=$(echo "$REPORT_JSON" | jq -r '.status')

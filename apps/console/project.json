@@ -44,7 +44,7 @@
       }
     },
     "verify-bundle-budget": {
-      "// note": "650/1000 kB must match the esbuild target's own budgets below — that check only sees Angular's own initial output. This one serves the real build and measures real bytes a headless browser downloads landing on '/', which is the only trustworthy number once Module Federation is in play — see tools/verify-bundle-budget.mjs's header comment for why a filename-based guess was tried first and was wrong twice.",
+      "// note": "500/1000 kB must match the esbuild target's own budgets below — that check only sees Angular's own initial output. This one serves the real build and measures real bytes a headless browser downloads landing on '/', which is the only trustworthy number once Module Federation is in play — see tools/verify-bundle-budget.mjs's header comment for why a filename-based guess was tried first and was wrong twice.",
       "cache": true,
       "dependsOn": ["build"],
       "inputs": [
@@ -54,7 +54,7 @@
       ],
       "executor": "nx:run-commands",
       "options": {
-        "command": "node tools/verify-bundle-budget.mjs dist/apps/console/browser 650 1000"
+        "command": "node tools/verify-bundle-budget.mjs dist/apps/console/browser 500 1000"
       }
     },
     "test": {
@@ -95,7 +95,7 @@
           "budgets": [
             {
               "type": "initial",
-              "maximumWarning": "650kb",
+              "maximumWarning": "500kb",
               "maximumError": "1mb"
             },
             {
