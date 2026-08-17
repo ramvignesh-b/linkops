@@ -13,8 +13,8 @@ services:
       - ASSISTANT_PROVIDER=${ASSISTANT_PROVIDER:-stub}
       - ASSISTANT_PROVIDER_KEY=${ASSISTANT_PROVIDER_KEY:-}
       - ASSISTANT_MODEL=${ASSISTANT_MODEL:-}
-    ports:
-      - '${API_PORT:-3000}:3000'
+    expose:
+      - '3000'
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:3000/api/fleet/summary']
       interval: 10s
@@ -33,7 +33,7 @@ services:
     container_name: linkops-console
     restart: unless-stopped
     ports:
-      - '${CONSOLE_PORT:-80}:80'
+      - '${PORT:-${CONSOLE_PORT:-80}}:80'
     depends_on:
       api:
         condition: service_healthy
