@@ -47,9 +47,10 @@ function childIdsOf(definition: A2uiComponent): string[] {
  * recurses unboundedly — the walk is depth-first and every branch is a fixed
  * number of calls deep before it must stop, one way or another.
  *
- * Not unit-tested on its own, by the same reasoning `spec-console.md` gave
- * for `FleetStore`: every property this function is responsible for is
- * observable from the rendered DOM, which is where it is asserted.
+ * Not unit-tested on its own, by the same reasoning
+ * `docs/specs/04-spec-console.md` gave for `FleetStore`: every property this
+ * function is responsible for is observable from the rendered DOM, which is
+ * where it is asserted.
  */
 interface TreeContext {
   byId: Map<string, A2uiComponent>;

@@ -89,9 +89,9 @@ export class FleetStore {
   private streamHasApplied = false;
 
   /**
-   * Dev-only: what one Tick costs this store, per ticket `36`. `isDevMode()`
-   * guards every call site below, so the marking and the tracking never run
-   * in production — a measurement harness that shipped would itself be a
+   * Dev-only: what one Tick costs this store. `isDevMode()` guards every
+   * call site below, so the marking and the tracking never run in
+   * production — a measurement harness that shipped would itself be a
    * per-Tick cost.
    */
   private readonly tickCostTracker = new TickCostTracker();
