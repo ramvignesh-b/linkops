@@ -45,7 +45,7 @@ pnpm install --frozen-lockfile
 ```
 
 No build step comes first, and no library needs compiling ahead of the apps —
-`libs/` resolves through the path mappings in
+[`libs/`](./libs/) resolves through the path mappings in
 [`tsconfig.base.json`](tsconfig.base.json). The only lifecycle script is
 `prepare: husky`, which installs git hooks and does not affect how the app runs.
 
@@ -145,7 +145,6 @@ pnpm test        # every project — nx run-many -t test
 pnpm lint        # ESLint, including the module-boundary rules of §7
 pnpm typecheck   # tsc --noEmit across every project
 pnpm build       # production builds, with bundle budgets enforced
-pnpm coverage    # one merged coverage report across both test runners
 ```
 
 While developing, pass a filename fragment after `--`:
@@ -156,27 +155,6 @@ pnpm nx test console-data-access                # one project
 ```
 
 A fragment matching no file exits non-zero rather than passing silently.
-
-**Coverage.** `pnpm coverage` writes one report to `coverage/` — HTML,
-`lcov.info`, and a `summary.json` that CI turns into a step summary. It prints
-the report's `file://` URL when it finishes, or `pnpm coverage --open` launches
-a browser straight at it. All 138 files sit on one sortable page, so clicking
-the *Statements* header brings the least-covered file to the top. It is reported,
-never gated: there is no threshold, because a number chosen before anyone
-measured the baseline is a number nobody trusts.
-
-Producing it takes a merge. `apps/api` and the libraries run under plain Vitest,
-but `apps/console` and `apps/assistant` run under `@angular/build:unit-test`,
-which cannot join the root config's project union — so a Vitest-only report shows
-every file in `libs/console/ui` as untested, when those components are
-deliberately asserted at the `apps/console` seam. `tools/coverage.mjs` runs both
-runners and unions the maps. Files no test imports are counted as 0% rather than
-dropped, so the denominator is every source file under `apps/*/src` and
-`libs/*/src` — bar the library barrels, which are pure re-exports and contribute
-nothing to any metric. Where both runners cover the same file, their statement maps
-disagree — the two pipelines compile it differently — so that file is counted
-from whichever run exercised it more. The result under-reports rather than
-over-reports.
 
 **How long it takes.** A cold `pnpm test --skipNxCache` across all 17 projects
 takes about **50 seconds** (49.0 s measured, all 17 green). A warm re-run takes
@@ -601,37 +579,25 @@ across host and remote. Reverted.
 
 ### How I used AI tools
 
-This was **AI-assisted development, not AI-authored code.** I directed it, I
-reviewed every diff, and I can explain and defend every line in this repository
-— which is the only standard that matters here, and the reason the overrides
-below exist at all.
+This project was built using AI-assisted development. AI acted as a helpful pair programmer, allowing me to accelerate the work and explore different approaches. While AI tools generated code and provided suggestions, I reviewed the diffs and tried my best to ensure the final implementation met the project's goals.
 
-AI was used throughout, with different models on different work: **Opus 5** for
-architectural decisions and planning, **Sonnet 5** for implementation, **Gemini
-3.1 Pro** for research and documentation lookup, and multiple specialised
-sub-agents in parallel to keep domain contexts separate. Concretely, it earned
-its place in four ways:
+AI was used throughout, with different models taking on different tasks: **Opus 5** for exploring architectural decisions, **Sonnet 5** for implementation assistance, **Gemini 3.1 Pro** for research and documentation lookup, and multiple specialised sub-agents running in parallel to manage different domain contexts. Here are the main ways AI contributed:
 
 | Use | What it looked like |
 | --- | ------------------- |
-| **Scaffolding** | Generating library skeletons, controllers, spec files and boilerplate far faster than by hand — the mechanical typing between a decision and a working test |
-| **Domain-awareness lookups** | Answering "what does this framework actually do on this version" against real documentation, rather than my guessing from a prior version. [ADR-0001](docs/adr/0001-toolchain-and-version-compatibility.md)'s compatibility matrix and the `@a2ui/angular` peer-dependency check both came out of this |
-| **Rotating roles** | The AI took whichever seat the work needed: architect proposing a structure, driver writing the code, navigator reviewing as it went, reviewer grilling a finished branch — and, often, the receiving end of my architecture, made to justify a design I had already chosen |
-| **Adversarial review** | Custom skills used to stress-test decisions before they were committed, which is how several of these ADRs found their rejected alternative |
+| **Scaffolding** | Generating library skeletons, controllers, spec files and boilerplate to help get things moving faster |
+| **Documentation lookups** | Quickly answering "what does this framework actually do on this version" based on real documentation. [ADR-0001](docs/adr/0001-toolchain-and-version-compatibility.md)'s compatibility matrix and the `@a2ui/angular` peer-dependency check were aided by this |
+| **Role-playing** | The AI took on different roles to assist the work: proposing structures, drafting code, helping with reviews, and acting as a sounding board for design ideas |
+| **Design review** | Custom skills helped review decisions and highlight potential alternatives before they were finalized in the ADRs |
 
-The seats rotated; the accountability did not. Every design the AI proposed had
-to survive being argued with, and the ones that did are the ADRs.
+Working with the AI models was a collaborative process. We discussed various designs iteratively, and the outcomes of those discussions helped shape the final ADRs.
 
-The methodology was spec-driven: requirements distilled into specs
-(`docs/specs/`), broken into sequential tracer-bullet stories
-(`.scratch/linkops/issues/`), then implemented test-first.
+The methodology was spec-driven: requirements distilled into [specs](./docs/specs/), broken into sequential [tracer-bullet stories](https://github.com/ramvignesh-b/linkops/issues?q=is%3Aissue+is%3Aclosed), then implemented test-first.
 
-Every correction is logged in
-[`docs/decisions/ai-collaboration.md`](docs/decisions/ai-collaboration.md).
-Three overrides worth naming:
+Every correction is logged in [`docs/decisions/ai-collaboration.md`](docs/decisions/ai-collaboration.md). Here are a few notable instances where we took a different path than initially suggested:
 
-| Entry | The tool suggested | I overrode because |
-| ----- | ------------------ | ------------------ |
-| 10 | Drop OpenAPI to save time, assuming class-based DTOs | The cost was priced against an architecture this project had already rejected — `nestjs-zod` generates the document from the existing schemas essentially for free |
-| 27 | Delete `TelemetryBus` as YAGNI | It is the boundary separating the simulator from the SSE layer; removing it would have coupled the two |
-| 35 | Patch the `GeminiAgent` prompt again — the fourth failed attempt at valid A2UI output | Repeated prompt fixes were treating a structural problem as a sequence of isolated defects. The answer was [ADR-0012](docs/adr/0012-the-model-recommends-the-server-renders.md): the model recommends, the server renders |
+| Entry | The tool suggested | We decided otherwise because |
+| ----- | ------------------ | ---------------------------- |
+| 10 | Drop OpenAPI to save time, assuming class-based DTOs | `nestjs-zod` generates the document from our existing schemas without much extra effort |
+| 27 | Delete `TelemetryBus` as YAGNI | It serves as a helpful boundary separating the simulator from the SSE layer |
+| 35 | Patch the `GeminiAgent` prompt again for valid A2UI output | Rather than tweaking prompts, we found a more structural solution in [ADR-0012](docs/adr/0012-the-model-recommends-the-server-renders.md): the model recommends, the server renders |
