@@ -95,7 +95,7 @@ const CHANNEL_WIDTH_OPTIONS: readonly ChannelWidthMhz[] = [20, 40, 80];
           name="name"
           type="text"
           [value]="value().name"
-          (change)="onName($event)"
+          (input)="onName($event)"
           [attr.aria-invalid]="issueFor('name') !== null"
         />
         @if (issueFor('name'); as message) {
@@ -110,7 +110,7 @@ const CHANNEL_WIDTH_OPTIONS: readonly ChannelWidthMhz[] = [20, 40, 80];
           name="siteA"
           type="text"
           [value]="value().siteA"
-          (change)="onSiteA($event)"
+          (input)="onSiteA($event)"
           [attr.aria-invalid]="issueFor('siteA') !== null"
         />
         @if (issueFor('siteA'); as message) {
@@ -125,7 +125,7 @@ const CHANNEL_WIDTH_OPTIONS: readonly ChannelWidthMhz[] = [20, 40, 80];
           name="siteB"
           type="text"
           [value]="value().siteB"
-          (change)="onSiteB($event)"
+          (input)="onSiteB($event)"
           [attr.aria-invalid]="issueFor('siteB') !== null"
         />
         @if (issueFor('siteB'); as message) {
@@ -176,7 +176,7 @@ const CHANNEL_WIDTH_OPTIONS: readonly ChannelWidthMhz[] = [20, 40, 80];
           name="capacityMbps"
           type="number"
           [value]="value().capacityMbps"
-          (change)="onCapacity($event)"
+          (input)="onCapacity($event)"
           [attr.aria-invalid]="issueFor('capacityMbps') !== null"
         />
         @if (issueFor('capacityMbps'); as message) {
@@ -191,7 +191,7 @@ const CHANNEL_WIDTH_OPTIONS: readonly ChannelWidthMhz[] = [20, 40, 80];
           name="txPowerDbm"
           type="number"
           [value]="value().txPowerDbm"
-          (change)="onTxPower($event)"
+          (input)="onTxPower($event)"
           [attr.aria-invalid]="issueFor('txPowerDbm') !== null"
         />
         @if (issueFor('txPowerDbm'); as message) {
