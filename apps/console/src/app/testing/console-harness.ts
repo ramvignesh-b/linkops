@@ -213,10 +213,11 @@ function linkDetailScreen(root: HTMLElement) {
 /** The Link create form's queries — grouped out of `screen` for the same reason as `linkDetailScreen`. */
 function linkCreateScreen(root: HTMLElement) {
   return {
-    /** Sets a form field's value and dispatches the `change` `lib-link-form` listens for. */
+    /** Sets a form field's value and dispatches the events `lib-link-form` listens for. */
     setFormField: (name: string, value: string): void => {
       const element = formControl(root, name);
       element.value = value;
+      element.dispatchEvent(new Event('input'));
       element.dispatchEvent(new Event('change'));
     },
     submitForm: (): void => {
