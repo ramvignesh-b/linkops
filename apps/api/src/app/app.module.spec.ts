@@ -231,7 +231,7 @@ describe('the Assistant endpoint under the application-wide pipe and filter', ()
 });
 
 /**
- * Ticket `41`'s own acceptance criterion: boot behaviour is asserted where
+ * Ticket 41's own acceptance criterion: boot behaviour is asserted where
  * boot behaviour already lives. The coherence rules themselves are
  * exhaustively covered as a pure function in
  * `server-config`'s `load-environment.spec.ts`; this only has to prove that

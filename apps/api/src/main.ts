@@ -9,16 +9,10 @@ import {
   buildOpenApiDocument,
   mountApiExplorer,
 } from '@linkops/server/links-api';
-import { loadDotenvFile, loadEnvironment } from '@linkops/server/config';
+import { loadEnvironment } from '@linkops/server/config';
 import { AppModule } from './app/app.module';
 
 async function bootstrap() {
-  // `.env` is merged into process.env explicitly, first — not left to
-  // `ServerConfigModule`'s own `ConfigModule.forRoot` to load as a side
-  // effect of wherever `AppModule` happens to import it. See
-  // loadDotenvFile's own comment.
-  loadDotenvFile();
-
   // Validated before Nest touches anything. `ServerConfigModule` runs this
   // same check again at DI-instantiation time — that copy is what makes an
   // incoherent environment fail `Test.createTestingModule(...).compile()`
