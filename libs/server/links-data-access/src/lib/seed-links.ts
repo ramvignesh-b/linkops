@@ -110,6 +110,26 @@ export const SEED_LINKS: readonly LinkDraft[] = [
   },
 ];
 
+/**
+ * Helper to generate synthetic links for bottleneck profiling.
+ * See the README's performance analysis for the 10,000 links analysis.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function seedSyntheticLinks(repository: LinkRepository, count: number): void {
+  for (let i = 1; i <= count; i++) {
+    repository.create({
+      name: `Synthetic Link ${i}`,
+      siteA: 'Site A',
+      siteB: 'Site B',
+      band: '5GHz',
+      mode: 'PtP',
+      capacityMbps: 500,
+      txPowerDbm: 20,
+      channelWidthMhz: 40,
+    });
+  }
+}
+
 /** Fresh repository, pre-populated with the fixed ten-Link seed. */
 export function createSeededLinkRepository(): LinkRepository {
   const repository = new InMemoryLinkRepository();
@@ -121,6 +141,9 @@ export function createSeededLinkRepository(): LinkRepository {
       throw new Error(`Seed data contains a duplicate name: ${draft.name}`);
     }
   }
+
+  // To test the 10,000-link bottleneck described in the README, uncomment the line below.
+  // seedSyntheticLinks(repository, 10000);
 
   return repository;
 }
