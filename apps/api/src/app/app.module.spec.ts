@@ -8,6 +8,7 @@ import {
   linkStatusEventSchema,
 } from '@linkops/shared/domain';
 import { buildOpenApiDocument } from '@linkops/server/links-api';
+import { A2UI_AGENT, StubTriageAgent } from '@linkops/server/a2ui-agent';
 import { SseTestClient, until } from './sse-client.fixture';
 import { AppModule } from './app.module';
 
@@ -226,5 +227,39 @@ describe('the Assistant endpoint under the application-wide pipe and filter', ()
     expect(Object.keys(act?.properties ?? {}).sort()).toEqual(
       ['kind', 'surfaceId', 'componentId', 'event', 'data'].sort(),
     );
+  });
+});
+
+/**
+ * Ticket 41's own acceptance criterion: boot behaviour is asserted where
+ * boot behaviour already lives. The coherence rules themselves are
+ * exhaustively covered as a pure function in
+ * `server-config`'s `load-environment.spec.ts`; this only has to prove that
+ * the assembled application — every feature module, not just the config
+ * seam in isolation — actually rests on them.
+ */
+describe('boot behaviour over the environment', () => {
+  it('yields the stub Assistant from a default (empty) environment', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    expect(moduleRef.get(A2UI_AGENT)).toBeInstanceOf(StubTriageAgent);
+
+    await moduleRef.close();
+  });
+
+  it('fails initialisation on an incoherent environment, naming the variable', async () => {
+    const original = process.env['ASSISTANT_PROVIDER'];
+    process.env['ASSISTANT_PROVIDER'] = 'bogus';
+
+    try {
+      await expect(
+        Test.createTestingModule({ imports: [AppModule] }).compile(),
+      ).rejects.toThrow(/ASSISTANT_PROVIDER/);
+    } finally {
+      if (original === undefined) delete process.env['ASSISTANT_PROVIDER'];
+      else process.env['ASSISTANT_PROVIDER'] = original;
+    }
   });
 });

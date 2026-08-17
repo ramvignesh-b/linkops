@@ -120,6 +120,31 @@ function optionLabels(body: unknown, componentId: string): string[] {
   return options.map((option) => option.label);
 }
 
+describe('the provider seam', () => {
+  const ENV_KEYS = ['ASSISTANT_PROVIDER', 'ASSISTANT_PROVIDER_KEY'] as const;
+  const original: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of ENV_KEYS) original[key] = process.env[key];
+  });
+
+  afterEach(() => {
+    for (const key of ENV_KEYS) {
+      if (original[key] === undefined) delete process.env[key];
+      else process.env[key] = original[key];
+    }
+  });
+
+  it('fails to boot when ASSISTANT_PROVIDER selects the unshipped model provider, with its key present and coherent', async () => {
+    process.env['ASSISTANT_PROVIDER'] = 'model';
+    process.env['ASSISTANT_PROVIDER_KEY'] = 'sk-dummy';
+
+    await expect(
+      Test.createTestingModule({ imports: [ServerA2uiAgentModule] }).compile(),
+    ).rejects.toThrow(/no model client ships/);
+  });
+});
+
 describe('POST /agent/ui', () => {
   const server = useServer();
 
