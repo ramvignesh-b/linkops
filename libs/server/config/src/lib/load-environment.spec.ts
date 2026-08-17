@@ -31,7 +31,7 @@ describe('loadEnvironment', () => {
 
     expect(environment).toEqual({
       API_PORT: 3000,
-      SWAGGER_UI_ENABLED: false,
+      SWAGGER_UI_ENABLED: true,
       ASSISTANT_PROVIDER: 'stub',
       ASSISTANT_PROVIDER_KEY: undefined,
       ASSISTANT_MODEL: undefined,
