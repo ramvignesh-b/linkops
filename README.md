@@ -1,802 +1,611 @@
 # LinkOps Console
 
+## 1. What this is
+
 An operator console for a fleet of point-to-point radio links: live status and
 throughput for every link, degraded ones visible immediately, drill-down into
 one link's telemetry, and link configuration editing. Telemetry comes from a
-simulator inside the API — there is no hardware and no external service.
+simulator inside the API, there is no hardware and no external service.
 
-See [`CONTEXT.md`](./CONTEXT.md) for the project's glossary and
-[`docs/adr/`](./docs/adr/) for the decisions this build rests on.
+See [`CONTEXT.md`](./CONTEXT.md) for the project's glossary,
+[`docs/adr/`](./docs/adr/) for the architectural decisions this build rests on, and 
+[`docs/specs/`](./docs/specs/) for the original specifications this was built against.
 
-## How it works
+## 2. Prerequisites
 
-The workspace is an Nx monorepo with two runtime artifacts — the API
-(`apps/api`, NestJS) and the Console (`apps/console`, Angular) — sharing a
-domain contract (`libs/shared/domain`) so client and server validate against
-the same rules.
 
-### The Fleet Roster
+| Requirement | Version     | Where it is pinned                                                          |
+| ----------- | ----------- | --------------------------------------------------------------------------- |
+| Node.js     | **24.18.0** | [`.nvmrc`](.nvmrc), `nvm use` reads it                                      |
+| pnpm        | **11.21.0** | [`package.json`](package.json) `packageManager`, `corepack enable` reads it |
 
-`GET /api/links` returns every Link in the Fleet, each carrying a derived
-`status`. Status is never stored and never accepted from a client — it is
-computed on every read from the Link's most recent Telemetry Sample:
 
-- **`up`** — `snrDb >= 18` and `throughputMbps >= 0.6 * capacityMbps`
-- **`degraded`** — `snrDb >= 10` and `throughputMbps >= 0.2 * capacityMbps`
-- **`down`, reason `metrics`** — reporting, but below the degraded floor
-- **`down`, reason `stale`** — no Sample within the last 5 seconds
+The application needs nothing else. It uses no database, no Docker, no message
+broker and no cloud service. All state stays in the memory of the API process
+for as long as that process runs.
 
-Staleness takes precedence over even a perfect reading: a five-second-old
-Sample is not evidence a Link is healthy right now. A Link that has never
-produced a Sample reads `down: stale` — the honest answer for a fleet with no
-data, not a placeholder for one.
+## 3. Install
 
-The API seeds ten Links on boot, spread across Bands, Modes and Capacities.
-The seed is a fixed table, not randomly generated, so two boots produce the
-same fleet.
-
-### Filtering and sorting the Fleet
-
-`GET /api/links` narrows and orders the Roster with `status`, `band`, `q`,
-`sort` and `dir` — see the [API reference](#get-apilinks) for the full
-parameter table. Where each filter runs is not arbitrary: `band` and `q` are
-fields the repository owns, so `libs/server/links-data-access` filters on
-them directly. `status` is derived from Samples the repository has never
-seen — giving it that knowledge would make a data-access library depend on
-telemetry, against the layer rule — so status filtering, and the two
-Sample-derived sorts (`status`, `throughputMbps`), happen in
-`libs/server/links-api`, above the repository, once the telemetry port has
-supplied the Sample each one needs. `libs/server/links-data-access` imports
-nothing from `libs/server/telemetry`.
-
-**The Console filters and sorts locally**, over the store it already holds
-from the stream, rather than calling this endpoint's query parameters. The
-server supports them because the contract promises them and a second client
-needs them — refetching on every sort change would fight the stream that is
-keeping the Console's store live. Both are correct; this reference documents
-the server's behaviour without implying the Console exercises it.
-
-**The Console's own copy of these words lives in its URL.** `/links` reads
-`status`, `band`, `q`, `sort` and `dir` straight off the query string —
-parsed with `linkListQuerySchema`, the same schema `LinkListQueryDto` wraps
-for the Server's validation pipe — so a Console URL and the equivalent `curl`
-to `GET /api/links` use the same vocabulary, and copying the address bar is
-enough to send a colleague the same view. `sortLinks` moved out of
-`server/links-api` into `shared/domain` for exactly this reason: the Console
-sorts its own filtered list with the identical function the Server sorts the
-Roster with, ties included, rather than a second comparator that could drift
-from the first one edit at a time. `band` and `q` run through
-`matchesBandAndQuery`, the same predicate `server/links-data-access`'s
-repository filters with, for the same reason. Filtering and sorting are derived over the
-store with a `computed`, so a Link that transitions to `degraded` on a later
-Tick enters a `degraded`-only view immediately — no refetch, because there was
-never a request to repeat. A query string the schema cannot parse — a
-mistyped `status`, an unknown `sort` key — is not treated as an operator
-error: it resolves to the defaults and the URL is rewritten to match, silently,
-which is the one place this Console chooses not to surface a failure, because
-a bad address is not an action the operator took.
-
-### Deleting a Link
-
-A Link together with its `version` is the unit of concurrent modification;
-Telemetry Samples sit deliberately outside that boundary, with their own
-lifecycle and their own storage. That is why deleting a Link is not complete
-until its Samples are gone with it — a ring buffer that outlived its Link
-would be a leak, and a console that runs alongside the fleet it manages is
-long-lived enough for a leak to become an outage. `DELETE /api/links/:id`
-removes the Link from the repository first and only then tells the telemetry
-port to drop its Samples: repository-first means the Simulator, which reads
-the Roster fresh every Tick, can never produce a Sample for a Link that is
-already gone.
-
-### Telemetry history and the Fleet Summary
-
-`GET /api/links/:id/telemetry?window=5m` and `GET /api/fleet/summary` are the
-two remaining reads the API promises, and both go through `TelemetryPort`
-rather than the repository — the repository only ever answers "does this Link
-exist", never "what has it reported". For a fleet that has never reported, the answer
-both endpoints give is the honest one: an
-empty history, and a Summary where every Link is `down`, every total is zero,
-and `worstLinkId` is `null`.
-
-**The Summary is server-authoritative, and the Console never aggregates it.**
-`FleetController` renders `TelemetryPort.summary()` verbatim — no counting,
-no filtering, no combining it with the repository happens in
-`server/links-api`. The redundancy of computing the same numbers twice, once
-on the server and once on the Console, is removed rather than arbitrated: a
-Tick applies as one atomic store write on the Console, so the Summary header can
-never contradict the list beneath it.
-
-**`worstLinkId` is a selection, not an aggregate.** It is the lowest `snrDb`
-among Links that currently have a Sample, ties broken on the lowest `id` so
-the choice is deterministic across Ticks, and Links with no Sample yet are
-excluded entirely — a Link with no reading is not the worst Link in the
-fleet, it is an unknown one, and `status: down, reason: stale` already says so
-separately. `worstLinkId` is `null` only when no Link anywhere has reported.
-
-### What the Console does with a Tick
-
-`pnpm start`, then <http://localhost:4200>, and an operator sees the whole
-Fleet: every Link's name, its two Sites, its Band, its Status and its
-Throughput against the Capacity it is provisioned for, under a Fleet-wide Summary
-header. The Console's half of the telemetry path is four decisions.
-
-**First paint is REST, not the stream.** `GET /api/links` and
-`GET /api/fleet/summary` are issued together on boot and applied as one write,
-because [ADR-0005](docs/adr/0005-snapshot-on-connect-no-telemetry-replay.md)
-makes the Snapshot the resync path rather than the load path: an operator whose
-`EventSource` is blocked should still see their Fleet. The Roster is loaded with
-**no query parameters** — the Console holds all of it and filters locally, since
-the stream delivers the whole Fleet and the Server cannot tell a filtered client
-that something has just entered its filter. Throughput reads `—` rather than `0`
-until the first frame lands, because `GET /api/links` carries the Roster and no
-Samples, and zero is a reading nobody has taken.
-
-**The stream then takes over.** `fleet.snapshot` replaces Roster, Samples and
-Summary wholesale on every connection, including the first. Every frame is
-validated against the same `streamEventSchema` the Server publishes from — this
-is [ADR-0006](docs/adr/0006-shared-zod-schema-as-the-contract.md)'s client half,
-and the schema's own listener list is what the Console subscribes with, so an
-event added to the catalogue is one it already listens for. A frame that fails
-validation is dropped and logged rather than rendered: one malformed frame
-should not blank an operator's console, and no operator action is owed a message
-because no operator took one.
-
-**One Tick is one store write.** The Console buffers a Tick's events and applies
-them together when `fleet.summary` lands, which the documented within-Tick
-ordering guarantees is last. That is the mirror image of
-[ADR-0004](docs/adr/0004-batched-per-tick-sse-framing.md): collapsing N Links
-into one frame on the wire buys nothing if the receiver un-batches it into four
-state changes and four change-detection passes. The header and the rows beneath
-it are therefore always from the same Tick. A Tick that somehow carried no
-`fleet.summary` is neither applied nor discarded — it stays buffered and the
-next Tick's Summary flushes both, so the degradation is a doubled batch rather
-than a frozen screen.
-
-**When the stream drops, the Console freezes.** Every row keeps its last known
-reading, a banner names the time of the last good frame, and **no Link flips to
-`down`**. That is the whole point: an operator has to be able to tell *the Fleet
-died* from *my connection died*, and a Console that kept deriving Status would
-make those two situations look identical — the **Stall** that
-[`CONTEXT.md`](./CONTEXT.md) calls worse than a disconnect. The time in the
-banner is the Server's own frame timestamp, never the browser's clock, so clock
-skew is not a category of bug here. Recovery needs nothing from the operator: the
-browser reconnects on the `retry: 3000` it was given, the Console reopens the
-stream itself in the one case where the browser gives up instead — a reply the
-Server never wrote, such as the 500 or 502 that arrives while the API restarts —
-and the next
-`fleet.snapshot` replaces the frozen state in one event. A dropped stream is a
-**Transport Failure** — its own type, never a synthesised Error Envelope, because
-the Server did not answer rather than answering "no".
-
-The Console derives nothing. `status` is rendered exactly as the Server
-computed it and the Fleet Summary is rendered verbatim, so there is no second
-producer of either to disagree with the first. `EventSource` reaches the Console
-through an injection token returning a narrow structural type rather than off
-the global — jsdom does not implement `EventSource` at all, so that token is
-what makes the whole path testable in the environment the Console's tests run
-in.
-
-Visually there is one theme, a fixed desktop layout, and roughly forty lines of
-design tokens in `apps/console/src/styles.css` that every component references
-instead of a literal colour or spacing. Status has **three** colours, not four:
-a `down` Link's reason — *no telemetry* versus *poor signal* — is a label,
-because it answers *why*, not *how bad*.
-
-**What one Tick costs, measured rather than asserted.** The store apply above —
-coalescing's one write — is bracketed with `performance.mark`/`performance.measure`
-in `FleetStore`, behind `isDevMode()` so the sampler is never a per-Tick cost in
-production. Sixty Ticks (one minute of streaming) against the ten-Link seed
-fleet: **0.2 ms median, 0.3 ms p95**. Measured on `nx serve console` —
-development configuration, the only one `isDevMode()` ever lets the sampler run
-in — in headless Chrome 146.0.7680.164 on an Intel Core i5-9300H (8 threads). A
-production build drops the dev build's unminified code and Angular's extra
-dev-mode checks, so production should cost at most this, not more.
-
-**Bundle size**, the other number of this kind: `nx build console
---configuration=production` reports an initial bundle of **616.33 kB raw,
-132.12 kB estimated transfer** (gzip).
-
-### Where things live
-
-| Library | Owns |
-|---|---|
-| `libs/shared/domain` | The wire schemas (`Link`, `TelemetrySample`, `FleetSummary`), the branded `LinkId`, `deriveStatus` — the one function in the system entitled to an opinion about what "good" is — `linkListQuerySchema`, `sortLinks` and `matchesBandAndQuery`, shared by the Server's `GET /api/links` and the Console's own filtered view, and the error vocabulary (`ApiErrorBody`, the `code` union, `FieldIssue`, `zodIssuesToFieldIssues`). Framework-free, one runtime dependency: zod. |
-| `libs/server/links-data-access` | `LinkRepository`, its in-memory implementation, and the ten-Link seed. Status is deliberately absent from the stored record — it is derived from Telemetry the repository has never seen. |
-| `libs/server/telemetry` | The Simulator — one fleet-wide interval, never a timer per Link — the Sample store behind it, `TelemetryPort` as the read side, and `TelemetryBus`, which publishes one Tick to whoever is subscribed. |
-| `libs/server/links-api` | The HTTP surface — `GET /api/links`, `GET /api/links/:id`, `POST /api/links`, `PATCH /api/links/:id`, `DELETE /api/links/:id`, `GET /api/links/:id/telemetry`, `GET /api/fleet/summary` — the DTOs `createZodDto` generates from the shared schemas, the globally registered `nestjs-zod` validation pipe, and the one exception filter mapping domain errors onto the error envelope. |
-| `libs/server/stream-api` | `GET /api/stream`, the Tick-to-events pipeline every connection shares, and the subscriber count that makes release observable. |
-| `libs/shared/a2ui-protocol` | The Assistant's wire contract: the A2UI envelope, the request union — opening a conversation and the Action that carries an operator's choice back — the flat component list, the whitelisted component names, the depth and count caps as constants, and the guarded JSON-Pointer read and write. Framework-free, one runtime dependency: zod. |
-| `libs/server/a2ui-agent` | `POST /api/agent/ui` and the agent behind it — a one-method interface behind two implementations: the deterministic stub, and `GeminiAgent`, which asks Gemini for a recommendation and builds the Surface carrying it from the same builders the stub uses ([ADR-0012](docs/adr/0012-the-model-recommends-the-server-renders.md)). Both read the Roster and Telemetry through the providers every other feature shares and answer an Action with a confirmation Surface rather than a write, and `selectA2uiAgent`, the provider seam configuration chooses an implementation at. |
-| `libs/server/config` | The configuration seam — `API_PORT`, `SWAGGER_UI_ENABLED`, `ASSISTANT_PROVIDER`, `ASSISTANT_PROVIDER_KEY`, `ASSISTANT_MODEL` — validated for coherence at boot, not presence, and the one typed place every other library reads the result through. See [Configuration](#configuration). |
-| `apps/api` | Module registration only. |
-| `libs/console/data-access` | The Console's wire and its state: the stream client behind the `EVENT_SOURCE` token, schema validation of every frame, the Tick coalescer, and `FleetStore` — the Roster, the latest Sample per Link, the Summary and the connection state, holding all three of the first as one value so a Tick applies as one write. `TransportFailure` and `applyListQuery` — the Console's filter-and-sort over the store — live here too, alongside the triage panel's `AssistantClient` and `AssistantSession`, and `AssistantFailure`, the third kind of failure for a Server reply that answered but could not be used. |
-| `libs/console/ui` | Presentational only, domain types in and events out, no store and no router: the Status pill, the Throughput-against-Capacity bar, the Summary Figure tile, the connection banner, the Fleet filter bar, and the A2UI renderer — `lib-a2ui-surface` and its six whitelisted components (`Surface`, `Card`, `Text`, `Button`, `Select`, `Metric`) plus the labelled fallback an unknown or over-bounded one degrades to. |
-| `libs/console/feature-fleet` | The `/links` route: the Fleet list, the Fleet-wide Summary header, the filter/sort controls above it, and the triage panel's composition — the one place on this route permitted to inject state, which is why the panel is composed here rather than in a feature library of its own. |
-| `libs/console/feature-link-detail` | The `/links/:id` and `/links/:id/edit` routes: one Link's configuration and readings, the Throughput sparkline over its recent history, both modes of the Link form, the version-conflict resolution and the delete. |
-| `apps/console` | The shell, the routes, the providers — including the real `EventSource` factory — and the integration tests that drive the routed Console with only the browser's two network primitives faked. |
-
-## API reference
-
-### OpenAPI document
-
-A generated OpenAPI document is served at `GET /api/openapi.json` — always
-available, no config flag required. It covers every endpoint below: request
-and response shapes come from the same `linkCreateSchema`, `linkPatchSchema`,
-`linkSchema`, `telemetrySampleSchema` and `fleetSummarySchema` the server
-validates and reads with, generated into DTOs via `createZodDto()` rather
-than hand-described, and the error envelope schema documents the `message`-
-is-diagnostic rule alongside every member of the closed `code` union (see
-[Errors](#errors) below). Because one schema drives both the validation pipe
-and the document, a range that changes in `shared/domain` changes the
-document with no second edit anywhere — see
-[ADR-0006](docs/adr/0006-shared-zod-schema-as-the-contract.md).
-
-The interactive Swagger explorer (`SwaggerModule.setup()`) mounts at
-`GET /api` only when `SWAGGER_UI_ENABLED=true` — see
-[Configuration](#configuration). It defaults off: an unauthenticated,
-`DELETE`-capable explorer is a different proposition on a host managing live
-radio infrastructure than on a developer's laptop. `GET /api/openapi.json`
-is served either way.
-
-### `GET /api/links`
-
-Returns the Fleet Roster with `status` derived per Link, filtered and sorted
-per the query string.
-
-| Parameter | Values | Default | Behaviour |
-|---|---|---|---|
-| `status` | `up` \| `degraded` \| `down` | *(none)* | Keeps only Links whose derived `status.status` matches |
-| `band` | `5GHz` \| `5.8GHz` \| `11GHz` \| `24GHz` | *(none)* | Keeps only Links in that Band |
-| `q` | any string | *(none)* | Case-insensitive substring match across `name`, `siteA` and `siteB` |
-| `sort` | `name` \| `capacityMbps` \| `status` \| `throughputMbps` | `name` | The field rows are ordered by |
-| `dir` | `asc` \| `desc` | `asc` | Sort direction |
-
-Filters combine — `?band=5GHz&q=depot` returns only 5GHz Links whose name or
-Sites contain "depot" — rather than one overriding another. Ties on the
-`sort` field always break on `id` ascending, so the order is total and two
-identical requests return an identical result. An unknown `sort` key or `dir`
-value is rejected as `400` `VALIDATION_FAILED`, the same as any other
-malformed query, rather than silently ignored.
-
-A seeded Link reads `down: stale` until the Simulator produces its first Sample, so
-`?status=down` initially returns the whole fleet — asserted
-deliberately, not a gap.
-
-```json
-[
-  {
-    "id": "lnk_0001",
-    "name": "North Ridge to Depot",
-    "siteA": "North Ridge",
-    "siteB": "Depot",
-    "band": "5GHz",
-    "mode": "PtP",
-    "capacityMbps": 300,
-    "txPowerDbm": 20,
-    "channelWidthMhz": 40,
-    "status": { "status": "down", "reason": "stale" },
-    "version": 1,
-    "createdAt": "2026-08-15T09:00:00.000Z",
-    "updatedAt": "2026-08-15T09:00:00.000Z"
-  }
-]
+```sh
+git clone <repository-url> linkops
+cd linkops
+corepack enable          # activates the pnpm version pinned in package.json
+nvm use                  # activates the Node version pinned in .nvmrc
+pnpm install --frozen-lockfile
 ```
 
-Every newly seeded Link reads `down: stale` until its first Telemetry
-Sample is produced, and that is the correct answer for a link without data, not a
-limitation.
+NOTE: No build step comes before these commands. There is no postinstall step,
+and no library must be compiled first. The libraries in `libs/` are resolved
+through the path mappings in [`tsconfig.base.json`](tsconfig.base.json), so the
+API build and the Console build compile them.
 
-### `GET /api/links/:id`
+NOTE: The only lifecycle script is `prepare: husky`. It installs the git hooks.
+It has no effect on how the application runs.
 
-Returns one Link together with its most recent Telemetry Sample in a single
-request, so drill-down never costs two round trips.
+You do not need a `.env` file. Read [§4](#4-configuration) for the reason, or go
+to [§5](#5-run-it) and start the application now.
 
-```json
-{
-  "link": {
-    "id": "lnk_0001",
-    "name": "North Ridge to Depot",
-    "siteA": "North Ridge",
-    "siteB": "Depot",
-    "band": "5GHz",
-    "mode": "PtP",
-    "capacityMbps": 300,
-    "txPowerDbm": 20,
-    "channelWidthMhz": 40,
-    "status": { "status": "down", "reason": "stale" },
-    "version": 1,
-    "createdAt": "2026-08-15T09:00:00.000Z",
-    "updatedAt": "2026-08-15T09:00:00.000Z"
-  },
-  "latestSample": null
-}
-```
+## 4. Configuration
 
-`latestSample` is `null` before the first Sample arrives — same honest answer as
-`status: down, reason: stale`, for the same reason. An unknown id returns
-`404` with the error envelope below.
-
-### `POST /api/links`
-
-Creates a Link from the eight operator-editable fields and returns it at
-`version: 1`, with `createdAt` and `updatedAt` set. The created Link appears
-in a subsequent `GET /api/links`.
-
-```json
-{
-  "name": "North Ridge to Depot",
-  "siteA": "North Ridge",
-  "siteB": "Depot",
-  "band": "5GHz",
-  "mode": "PtP",
-  "capacityMbps": 300,
-  "txPowerDbm": 20,
-  "channelWidthMhz": 40
-}
-```
-
-| Field | Range |
-|---|---|
-| `name` | 3–40 characters, unique |
-| `band` | `5GHz` \| `5.8GHz` \| `11GHz` \| `24GHz` |
-| `mode` | `PtP` \| `PtMP` \| `S2S` |
-| `capacityMbps` | 10–1000 |
-| `txPowerDbm` | −10–30 |
-| `channelWidthMhz` | 20 \| 40 \| 80 |
-
-A `status` or `version` on the request body is not honoured — both are
-stripped by the schema before the request reaches the repository, since
-`status` is derived and `version` is repository-owned. A body outside the
-ranges above returns `400` `VALIDATION_FAILED` naming the offending field; a
-`name` already in use returns `409` `LINK_NAME_TAKEN`.
-
-The DTO validating this body is generated from `linkCreateSchema` with
-`createZodDto()`, and validated by `nestjs-zod`'s pipe, registered globally —
-there is no hand-rolled validation pipe anywhere in this API.
-
-### `PATCH /api/links/:id`
-
-Edits a Link. The body carries any subset of the eight editable fields plus
-the `version` the operator was looking at, and returns the whole Link at the
-next version with `updatedAt` moved. `createdAt` never changes.
-
-```json
-{ "version": 1, "capacityMbps": 500 }
-```
-
-`version` is **required**, and required by `linkPatchSchema` rather than by a
-check in the handler — an edit that names no version cannot be represented, so
-there is no code path in which one lands without a compare-and-swap. That
-asymmetry (every editable field optional, `version` mandatory) is the whole of
-optimistic concurrency expressed in a schema.
-
-If the `version` no longer matches, the answer is `409` `LINK_VERSION_CONFLICT`
-carrying the **whole** current Link, not just its version number:
-
-```json
-{
-  "error": {
-    "code": "LINK_VERSION_CONFLICT",
-    "message": "...",
-    "details": {
-      "currentVersion": 2,
-      "current": {
-        "id": "lnk_0001",
-        "name": "North Ridge to Depot",
-        "siteA": "North Ridge",
-        "siteB": "Depot",
-        "band": "5GHz",
-        "mode": "PtP",
-        "capacityMbps": 500,
-        "txPowerDbm": 20,
-        "channelWidthMhz": 40,
-        "status": { "status": "down", "reason": "stale" },
-        "version": 2,
-        "createdAt": "2026-08-15T09:00:00.000Z",
-        "updatedAt": "2026-08-15T09:04:00.000Z"
-      }
-    }
-  }
-}
-```
-
-Carrying the whole Link is the load-bearing part: it lets the Console show
-theirs-versus-mine field by field. A response saying only "someone changed
-this, reload" throws the operator's work away and makes them find the
-difference by eye.
-
-Renaming a Link onto a name another Link already holds returns `409`
-`LINK_NAME_TAKEN`; resending a Link's own name is a no-op, not a collision. An
-unknown id returns `404` `LINK_NOT_FOUND`.
-
-The compare-and-swap lives in the repository signature —
-`update(id, patch, expectedVersion)`, never `save(link)` — so a write that
-skips the version check cannot be expressed. See
-[ADR-0008](docs/adr/0008-repository-interface-carries-the-version-check.md).
-
-### `DELETE /api/links/:id`
-
-Decommissions a Link. Returns `204` with no body; the Link is gone from a
-subsequent `GET /api/links`, and `GET /api/links/:id` for it returns `404`
-`LINK_NOT_FOUND`, same as deleting an unknown id.
-
-The repository delete runs first, and the telemetry port's `dropLink(id)`
-runs second — see [Deleting a Link](#deleting-a-link) above for why that
-order is load-bearing.
-
-### `GET /api/links/:id/telemetry`
-
-Returns the recent Telemetry Samples for one Link — what the detail view's
-sparkline draws from.
-
-| Parameter | Values | Default | Behaviour |
-|---|---|---|---|
-| `window` | a number followed by `s`, `m` or `h`, e.g. `30s`, `5m`, `1h` | `5m` | How far back to look for Samples |
-
-```json
-[]
-```
-
-Before the Simulator produces its first Sample, a seeded Link returns an empty array in this slice — the same honest answer as `status: down, reason: stale`
-on `GET /api/links`. A `window` that does not match the pattern above returns
-`400` `VALIDATION_FAILED` naming `window` as the offending field. An unknown
-Link id returns `404` `LINK_NOT_FOUND`, checked against the repository —
-existence is a Roster question, not a telemetry one.
-
-### `GET /api/fleet/summary`
-
-Returns the Fleet Summary — the counts and totals a Summary header renders,
-computed once by `server/telemetry` and never recomputed by a client.
-
-```json
-{
-  "total": 10,
-  "up": 0,
-  "degraded": 0,
-  "down": 10,
-  "totalThroughputMbps": 0,
-  "worstLinkId": null
-}
-```
-
-Before the first Sample arrives, every seeded Link counts as `down` and `worstLinkId` is `null` in this slice,
-for the same reason every newly seeded Link reads `down: stale` on `GET /api/links` — no
-Link has ever produced a Sample. `worstLinkId` selects the lowest `snrDb`
-among Links that currently have a Sample, ties broken on the lowest `id`;
-Links with no Sample yet are excluded from the selection entirely rather than
-treated as the worst, and the field is `null` only when nothing in the fleet
-has reported.
-
-### `GET /api/stream`
-
-The live Fleet, over Server-Sent Events. One endpoint carries the whole
-catalogue, so a second client never has to discover a second stream:
-
-```
-curl -N http://localhost:3000/api/stream
-```
-
-| Event | Cadence | Payload |
-|---|---|---|
-| `fleet.snapshot` | once, on every connection | `{ tick, ts, links, samples, summary }` |
-| `link.created` | edge-triggered | the Link, status derived |
-| `link.updated` | edge-triggered, on a `version` change | the Link, status derived |
-| `link.deleted` | edge-triggered | `{ linkId }` |
-| `link.telemetry` | every Tick | `{ tick, ts, samples }` — every Link's Sample as one array element |
-| `link.status` | edge-triggered, on a Status change | `{ linkId, status, previous }`, `status`/`previous` carrying `reason` when `down` |
-| `fleet.summary` | every Tick | the Fleet Summary, exactly as `GET /api/fleet/summary` returns it |
-
-Each per-Sample object is `telemetrySampleSchema` unchanged — the same shape
-the REST endpoints return, so one parser serves both surfaces. Within a Tick
-the order is a guarantee: membership first (`link.created`, `link.updated`,
-`link.deleted`), then `link.telemetry`, then `link.status`, then
-`fleet.summary` — a client is never handed a Sample for a Link it has not
-been told about, nor a Status transition derived from a Sample it has not
-yet seen, and the Summary always arrives last, describing the state
-everything before it just produced.
-
-`link.created`, `link.updated`, `link.deleted` and `link.status` are
-**edge-triggered**: produced by a per-Tick diff of the Roster against the
-Tick before it, computed once per Tick rather than once per connected
-client, and emitted only on the Tick a change is first seen — never
-repeated on the Tick after. A Link is `link.created` the Tick its id first appears — with
-`down: stale` and no Sample yet, if it was created between the Simulator's
-own Roster read and the diff's, the same thing `GET /api/links` would say
-about it at that instant. It is `link.updated` on a Tick its `version`
-moves, carrying its current configuration and derived Status. It is
-`link.deleted` the Tick its id stops appearing — closing the delete-while-
-streaming case: one `link.deleted`, no orphaned Sample in any later frame,
-and no crash. `link.status` fires on a derived Status change and carries
-`previous`, the Status the diff just replaced, so a client can say "went
-degraded" rather than "is degraded" — computed exactly as `GET /api/links`
-computes it, never a second derivation path.
-
-**Every edge is relative to the `fleet.snapshot` you just received.** The
-diff's baseline is captured when a connection opens, not when the server
-booted, so the first `link.status` a client sees carries a `previous` its
-own Snapshot agrees with, and a client connecting to a fleet that has been
-running for an hour is told about the transitions that follow rather than
-the ones it missed. The same holds after a gap in which no client was
-connected at all: a link created during it arrives in the Snapshot rather
-than as `link.created`, and one deleted during it is simply absent. A
-console can drive toasts, alerts or an event log straight off these events
-without defending itself against transitions that never happened —
-see [ADR-0004](docs/adr/0004-batched-per-tick-sse-framing.md).
-
-**One message per Tick, not one per Link.** A fleet of ten produces two
-events a second, and a fleet of a thousand still produces two — see
-[ADR-0004](docs/adr/0004-batched-per-tick-sse-framing.md).
-
-**`id:` is the Tick number**, and every event from one Tick shares it, so a
-client can tell what arrived together. **`Last-Event-ID` is ignored**: this
-server never replays. A reconnecting client resynchronises from the
-`fleet.snapshot` it receives on connect — current state, never a recording of
-what it missed — and that first message carries `retry: 3000`, which is the
-reconnect cadence for both sides
-([ADR-0005](docs/adr/0005-snapshot-on-connect-no-telemetry-replay.md)). The
-browser honours that hint on its own, with one exception a client has to handle:
-an `EventSource` whose request is answered by something other than a
-`200 text/event-stream` — the 500 or 502 whatever sits in front of the API
-returns while the API restarts — is closed permanently rather than retried, so a
-client must reopen it. The Console does, at the same 3000 ms; see that ADR's
-amendment.
-
-An idle connection receives a comment line, `: hb`, every 15 seconds, from one
-fleet-wide timer rather than one per connection. It keeps traffic flowing
-through whatever sits between server and client, so a quiet Fleet does not
-read as a dead connection, and being a comment it consumes no event id.
-
-`X-Accel-Buffering: no` is already on the response — Nest's own SSE writer
-sets it, along with `Content-Type: text/event-stream`, `Connection:
-keep-alive` and a full no-store `Cache-Control`. Nothing here sets it twice.
-
-Disconnecting releases the subscription immediately; the per-Tick work is done
-once and shared, so a second operator opening the Console costs one
-subscription and no extra work per Tick. Stopping the API ends every open
-response cleanly rather than severing it mid-frame — `curl -N` exits `0`.
-
-### `POST /api/agent/ui`
-
-The Assistant. It reads the Fleet as it stands and answers with an **A2UI
-Surface** — a document describing what should appear on screen, rendered by
-components the Console owns rather than by markup the Server sent.
-
-```json
-{ "kind": "open" }
-```
-
-```json
-{
-  "version": "v1.0",
-  "createSurface": {
-    "surfaceId": "triage",
-    "dataModel": { "linkId": "lnk_0003", "remediation": "narrow-channel" },
-    "components": [
-      { "id": "root", "component": "Surface", "children": ["card"] },
-      { "id": "card", "component": "Card", "title": "Triage", "children": ["intro", "link", "remediation", "recommend"] },
-      { "id": "intro", "component": "Text", "text": "2 Links are reporting readings that need attention. Pick one, and a remediation to consider." },
-      { "id": "link", "component": "Select", "label": "Link", "value": { "path": "/linkId" }, "options": [{ "value": "lnk_0003", "label": "Warehouse to Yard" }] }
-    ]
-  }
-}
-```
-
-**The round trip.** Pressing the offer's Button posts an Action back — the
-Surface it came from, the component that raised it, the event name, and the
-Data Model values that event carries — and the Assistant answers with a
-confirmation Surface naming the Link and the Remediation chosen, and the
-Sample the recommendation rests on.
-
-```json
-{
-  "kind": "act",
-  "surfaceId": "triage",
-  "componentId": "recommend",
-  "event": "recommend",
-  "data": { "linkId": "lnk_0003", "remediation": "narrow-channel" }
-}
-```
-
-```json
-{
-  "version": "v1.0",
-  "createSurface": {
-    "surfaceId": "triage",
-    "components": [
-      { "id": "root", "component": "Surface", "children": ["card"] },
-      { "id": "card", "component": "Card", "title": "Triage", "children": ["intro", "snr", "throughput"] },
-      { "id": "intro", "component": "Text", "text": "Warehouse to Yard: Narrow the Channel Width — less throughput, less interference" },
-      { "id": "snr", "component": "Metric", "label": "SNR", "value": "12 dB" },
-      { "id": "throughput", "component": "Metric", "label": "Throughput", "value": "84 / 400 Mbps" }
-    ]
-  }
-}
-```
-
-Between the offer and the confirmation, the two Surfaces exercise every one
-of the six whitelisted component types — `Metric` appears nowhere else. **An
-Action naming a Surface, Link or Remediation the Assistant does not
-recognise is refused with `400` `A2UI_INVALID_PAYLOAD`, not improvised** —
-the same code the Console produces in the other direction, because both name
-one thing: an A2UI document that could not be used.
-
-**The Assistant recommends and never writes.** No Surface it can author
-changes a Link — the operator applies a Remediation through the Link form,
-which validates against the same schemas and carries the version check. A
-payload arriving from outside must not reach the configuration of a live
-radio link, and the simplest way to guarantee that is to give it no path
-there at all.
-
-**Which Links it offers** comes from `withDerivedStatus`, the presenter the
-REST reads and the stream diff already share, so the Assistant cannot
-disagree with the Fleet list about what `degraded` means — no threshold
-appears in its library. It offers Links whose readings are poor: `degraded`,
-or `down` because of metrics. A Link that is `down` for want of data is left
-out, because every Remediation offered is a configuration change judged
-against readings, and a Link that has reported nothing has none to judge.
-When no Link qualifies, the Surface says so rather than carrying an empty
-picker.
-
-**The agent behind it is a deterministic stub** — a pure function of its
-request and the Roster, with no clock of its own, no randomness, no network
-and no key, so the same request against the same Fleet answers the same
-Surface twice, opening a conversation or acting within one alike. It sits
-behind a one-method interface and an injection token, which is the seam a
-model client would be swapped in at.
-
-A body that is not an Assistant request returns `400` `VALIDATION_FAILED`
-through the same pipe and envelope as every other endpoint.
-
-#### A2UI conformance
-
-Built against the [A2UI v1.0 candidate specification](https://a2ui.org/specification/v1.0-a2ui/),
-implemented here rather than taken from `@a2ui/angular` — which cannot be
-installed against this Angular version, and which would be a third-party
-dependency holding a security boundary. See
-[ADR-0007](./docs/adr/0007-own-a2ui-renderer.md).
-
-| Part of the specification | Here |
-|---|---|
-| `createSurface` | Implemented |
-| `updateDataModel` | Implemented — its `path`, `value` shape is also how a control's own write is expressed, so there is one guarded write path rather than two |
-| `updateComponents` | **Not implemented.** An in-place component patch needs an identity-stable merge nothing in this design exercises, and an unexercised merge path is an untested one |
-| `deleteSurface` | **Not implemented.** One Surface at a time, replaced by the next |
-| `callRendererFunction`, `agentFunctionResponse` | **Not implemented.** Bidirectional function calls are v1.0's largest addition and nothing here needs one |
-| Component types | Six, and ours: `Surface`, `Card`, `Text`, `Button`, `Select`, `Metric`. A name outside that list is still a valid document — the whitelist lives in the renderer's registry, not in the schema, so an unknown type can degrade to a labelled fallback instead of rejecting the Surface around it |
-| Static properties, and `{ "path": "/..." }` data bindings | Implemented, resolved through the guarded pointer functions |
-| `{ "call": ... }` function-call properties, `checks` validation rules | **Not implemented** |
-| Template iteration — `"children": { "path": ..., "componentId": ... }` | **Not implemented.** Children are an id list |
-| Markdown in `Text` | **Not implemented, deliberately.** Rendering it safely needs a sanitizer, and a sanitizer is a new attack surface to reason about |
-
-Two points the specification leaves open, settled here and written down
-rather than assumed:
-
-- **The root component is the first in the list.** A2UI leaves the root
-  implicit.
-- **`/` addresses the whole Data Model**, following `updateDataModel`'s own
-  default, where RFC 6901 would read it as the key `""`. Relative pointers
-  are refused outright, since they only mean anything inside a template's
-  collection scope and template iteration is not implemented.
-
-**The prototype-pollution guard is in the pointer functions themselves**, and
-refuses `__proto__`, `constructor` and `prototype` on reads as well as
-writes: a read through `constructor` is how a payload gets hold of the
-prototype in the first place, so guarding only writes would leave the door
-open and look shut.
-
-### Errors
-
-Every failure this API produces — across this endpoint and every one that
-follows it — is the same shape:
-
-```json
-{ "error": { "code": "LINK_NOT_FOUND", "message": "...", "details": { "id": "lnk_9999" } } }
-```
-
-The HTTP status carries the class of failure; `code` carries the meaning, so
-a client can handle a category generically (on the status) and a case
-specifically (on `code`). `details` is typed per `code`, as a discriminated
-union, so a consumer reads e.g. `details.current` without a cast.
-
-**`message` is diagnostic** — for logs and API consumers, never for an
-operator. Clients should switch on `code` for user-facing text; the Console
-owns that copy because the Server does not know where an error lands.
-
-| `code` | HTTP status | `details` | Produced by |
-|---|---|---|---|
-| `LINK_NOT_FOUND` | 404 | `{ id }` | `GET`, `PATCH` or `DELETE` on `/api/links/:id` with an unknown id |
-| `LINK_VERSION_CONFLICT` | 409 | `{ currentVersion, current }` | Editing a Link with a stale `version` |
-| `LINK_NAME_TAKEN` | 409 | `{ name }` | Creating or renaming a Link to a name already in use |
-| `VALIDATION_FAILED` | 400 | `{ issues: FieldIssue[] }` | A request body failing schema validation |
-| `A2UI_INVALID_PAYLOAD` | 400 | `{ reason }` | `POST /api/agent/ui`, when an Action names a Surface, Link or Remediation the Assistant does not recognise. The Console produces the same code locally — never over HTTP — when a reply fails the renderer's own validation |
-
-The `code` union is closed and has no internal-error member: an error the
-exception filter does not recognise is never wrapped in a synthesised
-envelope, because that would misrepresent where the failure came from. It
-passes through as Nest's default response instead, so a second client can
-tell "the Server said no" from "something else broke" by whether the body
-matches this shape at all.
-
-Every code above is produced by an endpoint documented here.
-
-## Configuration
-
-Four environment variables, read through `@linkops/server/config` rather
+Five environment variables, read through `@linkops/server/config` rather
 than `process.env` directly (see [`libs/server/config`](libs/server/config)),
 and validated at boot for **coherence, not presence**: every one of them is
 individually optional, so a fresh clone with no `.env` file and no key
 starts and answers through the stub. See
-[`.env.example`](.env.example) — copy it to `.env` (gitignored) to override
+[`.env.example`](.env.example), copy it to `.env` (gitignored) to override
 any of these locally; every value there is a placeholder, never a real key.
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `API_PORT` | `3000` | The port the API listens on |
-| `SWAGGER_UI_ENABLED` | `false` | Mounts the interactive Swagger explorer at `GET /api` when `true`. `GET /api/openapi.json` is served either way — see [OpenAPI document](#openapi-document) |
-| `ASSISTANT_PROVIDER` | `stub` | `stub` needs no key and is what ships in this repository. `gemini` and `anthropic` each select a real model client behind the `A2uiAgent` seam (`libs/server/a2ui-agent`) — see below |
-| `ASSISTANT_PROVIDER_KEY` | *(none)* | Required only when `ASSISTANT_PROVIDER` is `gemini` or `anthropic`. Never logged and never sent to the Console — the Console has no knowledge that a provider concept exists at all |
-| `ASSISTANT_MODEL` | `gemini-3.5-flash-lite` | The model identifier used when `ASSISTANT_PROVIDER=gemini` |
 
-**No credentials, no problem.** An empty environment is coherent by
-construction — nothing here is *required* — which is what makes "clone,
-`pnpm install`, `pnpm start`, get a working Assistant" true without a `.env`
-file ever existing.
+| Variable                 | What it does                                                                                                                                                                         | Required?                                                          | Default             | Example                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------- | ----------------------- |
+| `API_PORT`               | The port the API listens on                                                                                                                                                          | Optional                                                           | `3000`              | `3100`                  |
+| `SWAGGER_UI_ENABLED`     | Mounts the interactive Swagger explorer at `GET /api` when `true`. `GET /api/openapi.json` is served either way, see [OpenAPI document](#openapi-document)                           | Optional                                                           | `false`             | `true`                  |
+| `ASSISTANT_PROVIDER`     | `stub` needs no key and is what ships in this repository. `gemini` and `anthropic` each select a real model client behind the `A2uiAgent` seam (`libs/server/a2ui-agent`), see below | Optional                                                           | `stub`              | `gemini`                |
+| `ASSISTANT_PROVIDER_KEY` | The credential for a real model provider. Never logged and never sent to the Console, the Console has no knowledge that a provider concept exists at all                             | Conditional, required only when `ASSISTANT_PROVIDER` is not `stub` | *(none)*            | `dummy-key-do-not-use`  |
+| `ASSISTANT_MODEL`        | The model identifier used when `ASSISTANT_PROVIDER=gemini`                                                                                                                           | Optional                                                           | *(adapter default)* | `gemini-3.5-flash-lite` |
 
-**Fail fast, naming the variable.** Three things stop the boot, each
+
+**No credentials required.** An empty environment is coherent by
+construction, nothing here is *required*, so the application will
+boot and function properly on a fresh clone without a `.env` file. The optional A2UI integration relies on these variables: `ASSISTANT_PROVIDER`, `ASSISTANT_PROVIDER_KEY` and `ASSISTANT_MODEL` select
+and configure a real model. **Set none of them and the application is fully
+functional**, the assistant panel answers from the built-in stub agent,
+which is what ships in this repository and what runs on a clean machine.
+
+**Server-side credential usage.** It is read once, at boot, by
+`libs/server/config`, and used only inside `libs/server/a2ui-agent` when it
+builds a provider client. It is never included in a response body, never logged,
+and cannot reach the Angular bundle: `platform:console` libraries may not import
+`platform:server` ones, which [§7](#7-project-structure) enforces at lint time,
+and the Console has no configuration surface where a provider or a key could
+appear. The panel calls `POST /api/agent/ui`; the model call happens on the far
+side of that boundary.
+
+**Strict environment validation.** Three things stop the boot, each
 naming what caused it rather than leaving a stack trace to read:
 
-- a variable present but invalid — `API_PORT=nope`, `SWAGGER_UI_ENABLED=yes`;
+- a variable present but invalid, `API_PORT=nope`, `SWAGGER_UI_ENABLED=yes`;
 - `ASSISTANT_PROVIDER=gemini` or `ASSISTANT_PROVIDER=anthropic` with
-  `ASSISTANT_PROVIDER_KEY` absent or empty — the two are coherent together
-  or not at all;
-- an unrecognised variable that starts with `ASSISTANT_` — the near-miss
-  that would otherwise leave an operator on the stub while believing they
-  had configured a model, e.g. a typo'd key name that the schema silently
-  never reads.
+`ASSISTANT_PROVIDER_KEY` absent or empty, the two are coherent together
+or not at all;
+- an unrecognised variable that starts with `ASSISTANT_`, the near-miss
+that would otherwise leave an operator on the stub while believing they
+had configured a model, e.g. a typo'd key name that the schema silently
+never reads.
 
-**`gemini` ships; `anthropic` is a boot failure, not a silent downgrade.**
+**Explicit provider support.**
 `ASSISTANT_PROVIDER=gemini` with its key present builds `GeminiAgent`
 (`libs/server/a2ui-agent`): it pre-filters the Fleet down to the Links the
 shared presenter already considers degraded, and asks Gemini which of them to
 look at first, which Remediation to consider, and why. The Surface carrying
-that answer is built here, by the same builders the stub uses — the model
+that answer is built here, by the same builders the stub uses, the model
 supplies the judgement and the words, never the document, which is what makes
 a blank panel unexpressible rather than merely unlikely. The reasoning, and
 the three failure modes that produced it, are recorded in
 [ADR-0012](docs/adr/0012-the-model-recommends-the-server-renders.md).
 `ASSISTANT_PROVIDER=anthropic` with its key present is
-equally coherent — the schema accepts it — but no model client ships for it,
-and the seam (`selectA2uiAgent` in `libs/server/a2ui-agent`) refuses to fall
+equally coherent, the schema accepts it, but no model client ships for it,
+and the configuration (`selectA2uiAgent` in `libs/server/a2ui-agent`) refuses to fall
 back to the stub quietly. Silently downgrading would make every rule above
 pointless: the one thing an operator explicitly asked for would be the one
 thing that silently did not happen. The boot fails instead, with a message
 naming the seam and pointing at `ASSISTANT_PROVIDER`.
 
-## Development
+## 5. Run it
+
+To start the API and the Console together, run this command:
 
 ```sh
-pnpm install
-pnpm test      # nx run-many -t test
-pnpm lint      # nx run-many -t lint
-pnpm build     # nx run-many -t build
-pnpm start     # serves both apps/api and apps/console
+pnpm start          # nx run-many -t serve -p api console
 ```
 
-The Console is then at <http://localhost:4200> and the API at
-<http://localhost:3000>; the dev server proxies `/api` to it, so the Console
-calls the same relative paths in development that it would served next to the
-API.
+To start each side on its own, run one of these commands:
+
+```sh
+pnpm serve:api      # NestJS on http://localhost:3000
+pnpm serve:console  # Angular dev server on http://localhost:4200
+```
+
+
+| Surface    | URL                                                    | Notes                                                                                         |
+| ---------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Console    | [http://localhost:4200](http://localhost:4200)         | Open this one                                                                                 |
+| API        | [http://localhost:3000](http://localhost:3000)         | `API_PORT` moves it                                                                           |
+| Swagger UI | [http://localhost:3000/api](http://localhost:3000/api) | Only when `SWAGGER_UI_ENABLED=true`. The raw document at `/api/openapi.json` is always served |
+
+
+The dev server of the Console sends `/api` to the API through a proxy
+([`apps/console/proxy.conf.js`](apps/console/proxy.conf.js), which reads the same
+`API_PORT`). The Console therefore calls the same relative paths in development
+that it calls when the API serves it in production. There is no CORS
+configuration, because there is no cross-origin request.
+
+**Expected initial state.** The fleet has ten links. The seed
+table is fixed, not random, so a screenshot and a test describe the same fleet
+([`seed-links.ts`](libs/server/links-data-access/src/lib/seed-links.ts)).
+
+Telemetry starts in less than one second. The simulator makes one sample for
+each link every second. The KPI header shows a total of 10, normally with all
+ten links `up`, and an average throughput in the low hundreds of Mbps. The
+targets of the simulator are chosen so that a fleet reads healthy from its first
+tick.
+
+In the first minutes, a degradation episode usually claims one link. That link
+moves to `degraded` and becomes the worst link. This is the simulator at work,
+not a fault. A link becomes `down` only when no sample arrives for five seconds,
+which in practice means that the API stopped.
+
+## 6. Test it
+
+```sh
+pnpm test        # every project, nx run-many -t test
+pnpm lint        # ESLint, with the module-boundary rules of §7
+pnpm typecheck   # tsc --noEmit across every project
+pnpm build       # production builds, with the bundle budgets enforced
+```
+
+To run one spec file while you develop, give Vitest a fragment of the filename
+after `--`:
+
+```sh
+pnpm nx test shared-domain -- derive-status     # one spec file
+pnpm nx test console-data-access                # one project
+```
+
+A fragment that matches no file exits with a non-zero code. It does not pass
+silently.
+
+**How long the suite takes.** A cold run of `pnpm test --skipNxCache` across 15
+projects takes about **50 seconds** (51.5 s measured on the machine named in
+[§8](#8-how-it-works)). A second run takes about **0.2 seconds**, because the Nx
+cache answers every task. Both numbers are correct, and the cache decides which
+one you see. CI starts cold and therefore sees the first one.
+
+Nothing is skipped and no test sleeps. The SSE tests open a real HTTP connection
+with `fetch` and an `AbortController`, because the behavior under test is a
+client that disconnects.
+
+## 7. Project structure
+
+An Nx workspace: **two thin app shells and thirteen libraries.** The apps wire
+things together and own no domain logic.
+
+```
+linkops/
+├── apps/
+│   ├── api/                     NestJS shell, handles bootstrap and setup only
+│   └── console/                 Angular shell, routes, providers, global styles
+├── libs/
+│   ├── shared/                  platform:shared, imports no framework at all
+│   │   ├── domain/              Link, TelemetrySample, FleetSummary, LinkId, deriveStatus,
+│   │   │                        the SSE event catalogue, the error vocabulary. zod only.
+│   │   └── a2ui-protocol/       The A2UI surface schema, shared by the agent and the renderer
+│   ├── server/                  platform:server
+│   │   ├── links-data-access/   LinkRepository + in-memory implementation + the ten-link seed
+│   │   ├── telemetry/           Simulator, RingBuffer, TelemetryBus, TelemetryPort
+│   │   ├── config/              The environment schema and its loader
+│   │   ├── links-api/           REST controllers for links and the fleet summary
+│   │   ├── stream-api/          GET /api/stream, the tick-to-events pipeline
+│   │   ├── a2ui-agent/          The A2uiAgent interface: stub and Gemini implementations
+│   │   └── health/              Liveness
+│   └── console/                 platform:console
+│       ├── data-access/         FleetStore, the stream client, the tick coalescer, HTTP clients
+│       ├── ui/                  Presentational components, no injection of a data-access service
+│       ├── feature-fleet/       The fleet page: list, filters, KPI header, assistant panel
+│       └── feature-link-detail/ The detail page: sparkline, edit form, conflict handling
+├── docs/adr/                    13 ADRs, the decisions worth defending
+└── CONTEXT.md                   The domain glossary
+```
+
+![Nx Graph](docs/images/graph.png)
+
+**Where a new feature goes:** a new screen is a `feature` library under the
+platform that renders it; the state it needs goes in that platform's
+`data-access`; anything both platforms must agree on goes in `shared/domain`, and
+therefore may not import a framework.
+
+### The dependency rule, enforced by lint
+
+Three tag axes ([ADR-0009](docs/adr/0009-three-tag-axes-platform-domain-type.md)),
+enforced by `@nx/enforce-module-boundaries` in
+[`eslint.config.mjs`](eslint.config.mjs). A violation fails `pnpm lint`, so the
+rule is a build failure rather than a convention:
+
+
+| Axis        | Values                                                 | Rule                                                                                                                                                                             |
+| ----------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `platform:` | `shared`, `server`, `console`                          | `shared` may depend only on `shared`. `server` and `console` may each depend on themselves and on `shared`, never on each other. This keeps the code domains strictly separated. |
+| `type:`     | `app`, `feature`, `data-access`, `ui`, `domain`        | Dependencies point one way: `app` → `feature` → (`data-access`, `ui`) → `domain`. Never back up the chain, and **never feature → feature**.                                      |
+| `domain:`   | `platform`, `links`, `fleet`, `telemetry`, `assistant` | Organisational: it names what a library is about, and keeps the other two axes from being the only vocabulary.                                                                   |
+
+
+`platform:shared` additionally bans `@nestjs/*`, `@angular/*` and `rxjs` as
+external imports, which is what makes "domain logic independent of Nest and
+Angular" a rule the linter checks rather than a claim in a README. `deriveStatus`
+is unit-testable without booting either framework because it cannot import one.
+
+Regenerate the graph with `pnpm nx graph` (add `--file=graph.json` for a
+machine-readable dump). Every edge in it points down the table above; there are
+no cycles, because a cycle cannot be expressed under these constraints.
+
+### Where things live
+
+A summary of the library responsibilities:
+
+- `shared/domain`: Wire schemas, error vocabulary, and the pure `deriveStatus` function.
+- `server/*`: The HTTP surface, the in-memory `LinkRepository`, the telemetry `Simulator` and `RingBuffer`, and the A2UI provider integrations.
+- `console/data-access`: The `FleetStore` state management, stream coalescing, and HTTP clients.
+- `console/ui`: Presentational components and the A2UI surface renderer.
+- `console/feature-*`: Routed pages composing UI and data-access.
+
+## 8. How it works
+
+Data flows from a central simulator to the client in a unidirectional pipeline:
+
+```text
+  Simulator ── one Sample per Link, every second (1 Hz)
+      │
+      ├──► RingBuffer ── 300 Samples per Link, oldest evicted
+      │        └──► TelemetryPort ──► GET /api/links/:id/telemetry
+      │
+      └──► TelemetryBus ──► stream-api ─┬─ one batched link.telemetry frame per Tick
+                                        ├─ Roster diff vs the previous Tick:
+                                        │  link.created / updated / deleted / status
+                                        └─ fleet.summary
+                                              │
+                                    GET /api/stream (SSE)
+                                              │
+                                          EventSource
+                                              │
+                                    FleetStore, one write per Tick
+                                              │
+                                     signals ──► fleet page, detail page
+```
+
+- **Simulator**: Generates 1 Sample per Link per second.
+- **RingBuffer**: Retains the last 300 Samples per Link (capacity-bounded).
+- **SSE Stream**: Publishes one `link.telemetry` event per tick containing all new samples, collapsing N events into a single store write for the client.
+- **Status derivation**: Runs server-side only via `deriveStatus`. The client treats the received wire status as authoritative, ensuring dropped streams don't masquerade as dead links.
+- **Reconnection**: The client receives a fresh `fleet.snapshot` upon reconnect rather than replaying missed events.
+
+## 9. API reference
+
+The API is formally specified via OpenAPI:
+
+- **Swagger UI**: Interactive explorer available at `GET /api`. This route is disabled by default; enable it by setting `SWAGGER_UI_ENABLED=true` in your environment.
+- **OpenAPI Document**: The raw schema is always served at `GET /api/openapi.json` (generated at runtime in [`apps/api/src/main.ts`](apps/api/src/main.ts)), regardless of the UI toggle.
+
+### REST Endpoints
+
+- `GET /api/links`: List all links. Accepts `status`, `band`, `q` (search), `sort`, and `dir`.
+- `GET /api/links/:id`: Get single link details. Returns 404 if not found.
+- `POST /api/links`: Create a link (returns 201).
+- `PATCH /api/links/:id`: Edit a link. Supports partial updates and requires `version` for optimistic locking (returns 409 on conflict).
+- `DELETE /api/links/:id`: Remove a link.
+- `GET /api/fleet/summary`: Return aggregated KPI metrics.
+- `GET /api/links/:id/telemetry?window=300`: Fetch historical telemetry for a link.
+- `POST /api/agent/ui`: Submit an action to the A2UI assistant.
+
+### SSE Stream (`GET /api/stream`)
+
+Publishes strictly typed events defined in `libs/shared/domain/src/lib/stream-events.ts`:
+
+- `fleet.snapshot`: The initial state on connect.
+- `link.created`, `link.updated`, `link.deleted`: Configuration changes.
+- `link.telemetry`: Batched samples for the current tick.
+- `link.status`: Emitted when a link's status changes.
+- `fleet.summary`: Emitted every tick with updated KPIs.
+
+## 10. Common tasks
+
+**To add a field to a link:**
+
+1. Add the field to `linkSchema` in
+ [`libs/shared/domain/src/lib/link.ts`](libs/shared/domain/src/lib/link.ts).
+2. If a client can write the field, add it to `linkCreateSchema` and
+ `linkPatchSchema` in the same library.
+3. Compile the workspace. The compiler names every site that must change.
+4. Add the field to the seed table in `seed-links.ts`.
+5. Add the field to the form in `console/feature-link-detail`.
+
+NOTE: One edit propagates. The validation pipe of the server, the OpenAPI
+document and the form validators of the Console all read that same schema
+([ADR-0006](docs/adr/0006-shared-zod-schema-as-the-contract.md)).
+
+**To add an endpoint:**
+
+1. Define the request schema and the response schema in `shared/domain`.
+2. Add the handler to the controller in `server/links-api`.
+3. Return the result type of the repository. The controller maps a result arm to
+ an HTTP status. It does not invent one.
+4. If the endpoint needs a new error code, add the code to the `code` union in
+ `shared/domain`. A client can then switch on it exhaustively.
+
+**To add a UI panel:**
+
+1. Put the presentational component in `console/ui`. It takes inputs and emits
+ outputs, and it injects no data-access service.
+2. Compose the component inside a `feature` library. Only that layer can reach
+ `data-access`.
+3. If the panel needs its own screen, make a new `feature` library. A feature
+ that imports another feature is a lint error
+ ([ADR-0011](docs/adr/0011-feature-composition-through-ui-and-data-access.md)).
+
+**To add a test:**
+
+1. Put the `*.spec.ts` file beside the code it tests. Every project already runs
+ Vitest through the same runner
+ ([ADR-0002](docs/adr/0002-unified-vitest-runner-and-swc-decorator-metadata.md)),
+ so no configuration is necessary.
+2. If you test pure logic in `shared/domain`, use no framework. That library
+ cannot import one.
+3. If you add a new `LinkRepository` implementation, run it against
+ [`link-repository.contract.ts`](libs/server/links-data-access/src/lib/link-repository.contract.ts).
+ That file holds the behavior of the interface, written once for every
+ implementation. Do not write fresh tests for it.
+4. Run the new test with `pnpm nx test <project> -- <fragment>`.
+
+## 11. Troubleshooting
+
+**A port is already in use.** `EADDRINUSE` on port 3000 is the API. On port 4200
+it is the Console.
+
+- To move the API, run `API_PORT=3100 pnpm start`. The proxy of the Console reads
+the same variable, so both sides follow.
+- To move the Console, run `pnpm nx serve console --port 4300`.
+
+**The stream connects, but nothing updates.** A reverse proxy is usually holding
+the response in a buffer. An SSE stream never ends, so a proxy that waits for
+the end waits forever.
+
+- `GET /api/stream` sets `X-Accel-Buffering: no`, `Content-Type: text/event-stream` and `Cache-Control: no-cache`
+([`stream.controller.ts`](libs/server/stream-api/src/lib/stream.controller.ts)).
+nginx obeys this header. For another proxy, turn the buffer off yourself.
+- If the Console shows a disconnected state instead, make sure that the API is
+running. The Console reconnects without help and resynchronizes from a fresh
+snapshot.
+
+**The boot fails and names an environment variable.** This is the design, not a
+fault. Validation tests coherence, so the message names what is incoherent. The
+three cases are listed in [§4](#4-configuration).
+
+- To return to a state that always boots, erase the `.env` file. An empty
+environment is valid.
+
+**A build is stale.** Nx caches on the inputs of each task, so a result that
+looks impossible usually is.
+
+- To clear the cache, run `pnpm nx reset`.
+- To bypass the cache for one command, add `--skipNxCache`.
+- If the Console serves an old bundle after a dependency change, remove the
+`.angular/` and `dist/` directories. Then run the command again.
+
+NOTE: The numbers in [§6](#6-test-it) assume a cold cache where they say so.
 
 ## 12. Decisions, gaps and next steps
 
-**Where this design breaks at 10,000 links**
+### Three decisions I would defend in a review
+
+**1. The stream is batched per tick, not per sample.**
+One `link.telemetry` event carries every link's sample for that tick, and every
+event from one tick shares an `id:`
+([ADR-0004](docs/adr/0004-batched-per-tick-sse-framing.md)). *Rejected: one
+event per sample*, which is the shape the brief's example suggests and is simpler
+to write on the server. It moves the cost onto the client: at N links it is N
+messages, N parses and N potential change-detection passes per second, so the
+brief's own requirement, "coalesce or throttle so the UI is not re-rendered once
+per message per link", becomes something the client has to undo. Batching makes
+the guarantee structural instead: **one tick is one store write**, at ten links
+or ten thousand, and the measurement in [§8](#8-how-it-works) is what that costs.
+The trade-off is that a batched frame is all-or-nothing, and a
+client that wants only one link still receives the fleet. That is the bottleneck
+[below](#where-this-design-breaks-at-10000-links).
+
+**2. One zod schema is the contract, on both sides of the wire.**
+`linkSchema` and its create/patch derivatives live in `shared/domain` and drive
+the NestJS validation pipe, the OpenAPI document and the Console's form
+validators
+([ADR-0006](docs/adr/0006-shared-zod-schema-as-the-contract.md)). *Rejected:
+class-validator decorators on server DTOs plus hand-written Angular validators*.
+the conventional NestJS choice. It states every rule twice, in two languages that
+cannot be diffed, and the two drift silently: the failure mode is a client that
+accepts what the server rejects, which surfaces as a support ticket rather than a
+test failure. `capacityMbps` is 10–1000 in exactly one place, and both sides read
+it. The cost was needing `nestjs-zod` to bridge zod into Nest's pipe and Swagger.
+a real dependency accepted deliberately, and the reason the "drop OpenAPI to save
+time" argument [below](#how-ai-tools-were-used) turned out to be costed against
+an architecture this project had already rejected.
+
+**3. The compiler enforces the Optimistic Concurrency version check.**
+The database `LinkRepository` exposes an `update(id, patch, expectedVersion)` method rather than a generic `save(link)` method ([ADR-0008](docs/adr/0008-repository-interface-carries-the-version-check.md)). 
+*Rejected: Checking the version in the service layer and then calling `save(link)`.* 
+
+Doing the check in the service layer creates two major issues:
+- **It is not atomic:** A race condition opens up between reading the version and writing the save.
+- **It relies on developer memory:** A developer might forget to check the version before saving.
+
+By requiring `expectedVersion` in the repository's method signature, a write that skips the version check becomes physically unexpressible—the TypeScript compiler will reject it. This also means the repository itself handles the atomicity and returns clean, structured results (like "Stale Version" or "Duplicate Name") which the controller easily maps to HTTP 409 or 400 responses, rather than throwing ambiguous exceptions.
+
+### Where this design breaks at 10,000 links
+
 At 10,000 links, the system pushes roughly 1MB of JSON over SSE every second. While an 8 Mbps stream is not a network bandwidth problem on a modern LAN, it creates a fatal bottleneck in the **browser's main thread**. 
 
-1. **DOM & Rendering:** Rendering 10,000 table rows updated at 1 Hz will freeze the tab. 
-2. **JSON Parsing & GC Churn:** Parsing a 1MB payload and allocating 10,000 objects every second causes heavy garbage collection stutter.
+![Browser freezing at 10k links](docs/images/stream-overload.png)
 
-**What I would do next:**
+1. **DOM &amp; Rendering:** Rendering 10,000 table rows updated at 1 Hz will freeze the tab.
+2. **JSON Parsing &amp; GC Churn:** Parsing a 1MB payload and allocating 10,000 objects every second causes heavy garbage collection stutter.
+
+**The fix, and what it costs:**
 To fix the DOM freeze, I would implement **Virtual Scrolling** (`@angular/cdk/scrolling`) so only the ~30 visible rows exist in the DOM at any given time (Note: `@defer` is not the right tool here, as it lazy-loads JS chunks rather than recycling DOM nodes). 
 
 To fix the GC churn, I would change the stream contract from "push the whole world" to a **viewport-aware subscription**. The client would notify the server which 30 links are currently visible (updating this list instantly on scroll, filter, or sort). The server would then only stream `link.telemetry` and `link.status` events for those specific links. The server would continue to stream the `fleet.summary` event unconditionally every tick, so the KPI header remains accurate for the entire 10,000-link fleet without the client needing the raw data.
+
+### The bounds, since the brief asked them to be decided rather than defaulted
+
+**Ring buffer N = 300 samples per link**, five minutes at 1 Hz, chosen to match
+`DEFAULT_TELEMETRY_WINDOW` so the widest view the UI offers is exactly what is
+retained ([ADR-0010](docs/adr/0010-telemetry-retention-is-capacity-bounded.md)).
+Retention is capacity-bounded rather than window-bounded on purpose: a buffer
+sized to whatever window a client might ask for grows with both fleet size and
+the most extravagant request ever made, which is the unbounded growth the ring
+buffer exists to prevent. A client asking for an hour gets the five minutes that
+exist, never an error, never padding.
+
+**The client holds history; it does not refetch it.** The detail view loads its
+window once and appends live samples, bounded by `HISTORY_CAP` in
+`libs/console/feature-link-detail/src/lib/link-history.ts`, the same number as
+the server's, because a client that appended without a bound would grow with how
+long a screen stayed open, reopening on the Console the exact leak the server
+closed. Refetching per tick was the alternative: one HTTP round trip per second
+per open detail view, to rebuild data the stream is already delivering.
+
+**Measured, not asserted.** Both numbers this section rests on are in
+[§8](#8-how-it-works) with the conditions they were taken under: **0.2 ms median
+and 0.3 ms p95** for the per-tick store write over sixty ticks at ten links, and
+an initial bundle of **616.33 kB raw / 132.12 kB estimated transfer**. A re-run
+on a machine with a coarser `performance` clock reproduced the tick cost at
+whole-millisecond resolution, 0 ms median, 1 ms p95, which is the same result
+seen through a blunter instrument, not a different one. The bundle is checked by
+a budget that fails the build: `apps/console/project.json` sets a 650 kB warning
+and a 1 MB error on the initial bundle, so the current build sits inside its
+budget with room, and a regression that crosses it stops `pnpm build` rather than
+being noticed later.
+
+### What I deliberately did not build
+
+**Module Federation (B4).** Built on a separate branch. The implementation is live, fully functional, and ready for testing in [PR #65](https://github.com/ramvignesh-b/linkops/pull/65). However, it was intentionally kept off `main` due to strict bundle size constraints. The initial bundle size currently exceeds the 1MB budget (landing at ~1.4MB) and requires further optimization before a safe merge. The structural extraction was clean: the assistant's renderer was already a decoupled `ui` component (`lib-a2ui-surface`) and its state a `data-access` service (`AssistantSession`). What I would do
+about **host/remote version skew on a device** is the part worth answering
+regardless: the host and remote share `@linkops/shared/domain`, which is the wire
+contract, so skew between them is contract skew wearing a different hat. I would
+version the remote's exposed module against that contract explicitly and have the
+host refuse to mount a remote whose contract version it does not recognise.
+degrading to a message in the panel, not a broken shell, because on a device the
+host is the thing that must keep working when the optional half is stale. Silent
+mounting of a mismatched remote is the failure mode Module Federation makes easy
+and a device makes expensive.
+
+**A2UI (B2), and which parts of the spec I skipped.** Built against the
+[A2UI v1.0 candidate specification](https://a2ui.org/specification/v1.0-a2ui/),
+rendered by a component registry this repository owns rather than
+`@a2ui/angular`, which cannot be installed here in any case
+(`@a2ui/angular@0.10.5` peer-depends `@angular/core: ^21.2.5`, verified against
+the registry on 2026-08-14; this client is on Angular 22), and which would be the
+wrong shape even if it could: what is needed is a mapping from an untrusted
+agent-authored payload onto a whitelist of components *we* control, and a
+general-purpose renderer is the opposite of a whitelist
+([ADR-0007](docs/adr/0007-own-a2ui-renderer.md)). **Covered:** zod validation of
+the whole payload before anything touches it, a component whitelist with a
+labelled fallback for unknown types, text through interpolation only (no
+`innerHTML`, no `bypassSecurityTrust*`), depth and component-count caps, cycle
+detection, and a prototype-pollution guard on JSON-Pointer segments. **Deliberately
+skipped:** markdown in `Text` (it needs a sanitizer, and a sanitizer is a new
+attack surface, the safe subset is documented instead), `callRendererFunction`,
+`agentFunctionResponse`, and streaming partial messages.
+
+**Zoneless (B3), and what it took.** The Console ships **without zone.js**: it is
+not a dependency in `package.json` and the build declares no `polyfills` entry,
+so nothing patches the browser's async APIs and there is no manual `tick()`
+anywhere. What had to change was upstream of the client: the stream is coalesced
+into **one store write per tick** ([§8](#8-how-it-works)), so a 1 Hz fleet
+produces one change-detection pass per second instead of one per link per
+second, the decision in ADR-0004 is what makes zoneless comfortable rather than
+merely possible. The `EventSource` itself is injected behind the `EVENT_SOURCE`
+token, which keeps the async boundary explicit and lets tests drive it without a
+zone to flush.
+
+**Virtual scrolling.** Omitted at ten links, where thirty DOM rows cost less than
+the machinery to recycle them. It is the first thing the 10,000-link analysis
+above reaches for, which is exactly the point: it is a fix for a problem this
+fleet demo does not have.
+
+### What another day buys, in order
+
+1. **Optimize and merge Module Federation (B4)** from [PR #65](https://github.com/ramvignesh-b/linkops/pull/65) with the contract-version guard. The
+ seam is already clean; the work is packaging and the skew policy, and it is
+ the highest-value unbuilt item.
+2. **Scope the stream to what a client is watching.** The first real bottleneck
+ ([above](#where-this-design-breaks-at-10000-links)), and the change is
+ additive: a subscribe message naming visible link ids, with `fleet.summary`
+ still unconditional so the KPI header stays whole-fleet accurate.
+3. **An e2e pass over the two round trips that only integration can prove**.
+ the 409 conflict resolution and delete-while-streaming, which are currently
+ covered at the HTTP and store layers separately but never end to end.
+
+## 13. Console Bundle Observability
+
+### 📦 Console Bundle Observability
+<!-- console-bundle-report -->
+
+#### 🚀 Initial Bundle (Render-Blocking — Budget: 650 kB warn / 1 MB error)
+| Asset | Type | Raw Size | Gzip Transfer |
+| :--- | :--- | :--- | :--- |
+| `chunk-I76GP2UV.js` | Initial | 619.60 kB | 155.04 kB |
+| `main-IRHHFMZF.js` | Initial | 1.50 kB | 0.82 kB |
+| `styles-67BXPTTN.css` | Initial | 3.93 kB | 1.08 kB |
+| **Initial Total** | **All Initial** | **625.02 kB** | **156.94 kB** |
+
+**Budget Status:** 625.02 kB / 650.00 kB Warning (✅ Pass — Headroom: 24.98 kB)
+
+#### 💤 Lazy Chunks (Loaded on Demand)
+| Asset | Type | Raw Size | Gzip Transfer |
+| :--- | :--- | :--- | :--- |
+| `chunk-7464Y5NW.js` | Lazy Route | 16K | 4.69 kB |
+| `chunk-M7CP6PMY.js` | Lazy Route | 13K | 4.27 kB |
+
+#### 🔤 Self-Hosted Media (Fonts / Assets)
+| Asset Category | On-Disk Size | Transferred Subset |
+| :--- | :--- | :--- |
+| Fonts (`media/*.woff2`) | 176K | ~62 kB (Latin subsets on first load) |
+| Favicon & HTML | 19.4 kB | Cached on load |
+
+## 14. Bonuses targeted and achieved
+
+The following stretches from the assignment brief were targeted:
+
+- ✅ **B1 (Nx Monorepo):** The workspace is structured as an Nx monorepo with 13 libraries and 2 apps, governed by strict dependency bounds.
+- ✅ **B2 (A2UI Assistant):** The deterministic stub and Gemini integration are functional behind a secure server-rendered UI protocol (`libs/shared/a2ui-protocol`).
+- ✅ **B2a (Clean Machine DX):** Environment coherence is validated at boot. `ASSISTANT_PROVIDER_KEY` fails fast with a clear error name if absent when required, but is fully optional when using the stub.
+- ✅ **B3 (Zoneless Angular):** The Angular Console runs entirely zoneless with `OnPush` components and signals.
+- ⚠️ **B4 (Module Federation):** Built on a separate branch. The implementation is live and fully functional in [PR #65](https://github.com/ramvignesh-b/linkops/pull/65), but was kept off `main` because the initial bundle size currently exceeds the strict 1MB budget (~1.4MB). It requires further optimization before merging.
+- ✅ **B5 (Performance measurement):** Render-blocking bundle budgets are enforced via CI (`budget: 650kb` & `maximumError: 1mb`), and the per-tick store apply cost is measured at ~0.3ms p95 for a 10 fleet.
+- ✅ **B6 (Production Readiness):** 13 ADRs record architectural decisions, GitHub Actions CI workflows are present, and the repository is completely automated via `nx` commands.
+
+## 15. AI Tool Usage
+
+AI agents were heavily utilized throughout this project's lifecycle, combining multiple models and sub-agents for specialized tasks:
+
+- **Claude Code &amp; Gemini**: Used as the primary AI collaborators.
+- **Opus 5**: Employed specifically for architectural decision-making and high-level planning.
+- **Gemini 3.1 Pro**: Used for research, documentation lookup, and verification.
+- **Sonnet 5**: Used for direct programming and implementation.
+- **Multi-Agent Orchestration**: Multiple specialized sub-agents were orchestrated to parallelize tasks and maintain domain contexts.
+- **Methodology**: Development followed a strict Spec-Driven Development workflow: requirements were distilled to create specs, which were broken down into sequential stories (tracer bullets), and finally implemented using Test-Driven Development (TDD). The architecture was consistently grilled and stress-tested using custom AI skills.
+
+### Human Overrides
+
+All AI tool corrections and overrides are logged in [`docs/decisions/ai-collaboration.md`](docs/decisions/ai-collaboration.md). A few notable examples of human overrides include:
+
+- **Entry 10 (OpenAPI vs Time):** The AI recommended dropping OpenAPI to save time, assuming class-based DTOs. I overrode the recommendation after verifying that `nestjs-zod` could generate the document from existing schemas essentially for free.
+- **Entry 27 (TelemetryBus):** The AI proposed deleting `TelemetryBus` as YAGNI. I overrode this to preserve the strict boundary separating the simulator from the SSE layer.
+- **Entry 35 (Treating systemic design flaws as prompt bugs):** The AI repeatedly patched a failing `GeminiAgent` prompt to fix invalid A2UI surface outputs, treating each failure as an isolated defect. I overrode this approach after the fourth failure, rejecting prompt-engineering in favor of questioning the underlying structural design.
+

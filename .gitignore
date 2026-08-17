@@ -35,7 +35,6 @@ pnpm-debug.log*
 # Reference material and personal study notes, not product source
 docs/*.pdf
 docs/study
-docs/decisions
 
 # Claude Code: project commands are shared, per-user settings are not
 .claude/settings.local.json
