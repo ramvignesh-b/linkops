@@ -1,5 +1,4 @@
 import { AssistantPanel } from '@linkops/console/feature-assistant';
-import { ASSISTANT_REMOTE_LOADER } from '@linkops/console/data-access';
 import { A2UI_MAX_COMPONENTS } from '@linkops/shared/a2ui-protocol';
 import { toLinkId, type FleetSummary, type Link } from '@linkops/shared/domain';
 import {
@@ -226,6 +225,11 @@ describe('the triage panel', () => {
       resolveLoad = resolve;
     });
 
+    // Dynamic, not static — see `bootConsole`'s own import of the same
+    // token for why.
+    const { ASSISTANT_REMOTE_LOADER } = await import(
+      '@linkops/console/feature-fleet'
+    );
     const { fixture, http } = await bootConsole('/links', [
       { provide: ASSISTANT_REMOTE_LOADER, useValue: () => loading },
     ]);

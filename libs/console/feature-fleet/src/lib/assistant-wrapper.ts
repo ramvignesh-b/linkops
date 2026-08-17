@@ -6,7 +6,7 @@ import {
   signal,
   type Type,
 } from '@angular/core';
-import { ASSISTANT_REMOTE_LOADER } from '@linkops/console/data-access';
+import { ASSISTANT_REMOTE_LOADER } from './assistant-remote-loader.token';
 
 /**
  * Fetches the Assistant remote's component and mounts it — the whole of

@@ -111,12 +111,39 @@ is answerable to.
 - Every test that exercises the panel (`apps/console/src/app/assistant.spec.ts`)
   still runs as an integration test through `bootConsole`, per ADR-0011's
   testing note — nothing about that changed. What changed is one seam:
-  `ASSISTANT_REMOTE_LOADER` (`console/data-access`, alongside `EVENT_SOURCE`)
-  stands in for `loadRemoteModule` the same way `EVENT_SOURCE` stands in
-  for the browser's own `EventSource` — real in production, resolved to the
-  real `AssistantPanel` class directly in tests, so the composition under
-  test is exactly what ships, minus the one step — fetching code over the
-  network — no test environment can perform.
+  `ASSISTANT_REMOTE_LOADER` (`console/feature-fleet`, alongside the wrapper
+  that injects it) stands in for `loadRemoteModule` the same way
+  `EVENT_SOURCE` (`console/data-access`) stands in for the browser's own
+  `EventSource` — real in production, resolved to the real `AssistantPanel`
+  class directly in tests, so the composition under test is exactly what
+  ships, minus the one step — fetching code over the network — no test
+  environment can perform.
+- **`ASSISTANT_REMOTE_LOADER` cannot live in a `sharedMappings` library.**
+  It did briefly, in `console/data-access`, and the panel never loaded: the
+  spinner spun forever, with no network request and no error. A
+  `sharedMappings` entry is built as its own standalone bundle, separate
+  from `apps/console`'s `main.ts` — and `@angular-architects/native-federation`
+  cannot itself be declared a shared external (it is the package that
+  establishes the shared-import mechanism `main.ts`'s own bootstrap import
+  of it runs before any such mechanism exists), so it gets inlined
+  independently into every bundle that imports it. Two inlined copies means
+  two separate instances of the package's module-scoped `federationPromise`
+  — `main.ts`'s `initFederation()` resolves one, and `loadRemoteModule`,
+  called from the other, awaits a promise nothing has ever settled, forever,
+  since that await happens before any fetch is attempted. The fix was
+  relocating the token to `console/feature-fleet` — lazy-loaded application
+  code, bundled through the same graph as `main.ts`, not a separate shared
+  mapping — which is also why `apps/console/src/app/testing/console-harness.ts`
+  now imports it dynamically (`await import('@linkops/console/feature-fleet')`)
+  rather than statically: that library is lazy-loaded from
+  `app.routes.ts`, and `@nx/enforce-module-boundaries` bans a project from
+  also statically importing a library it lazy-loads elsewhere. No test seam
+  in this repository catches this class of bug directly — it is a real
+  cross-bundle runtime interaction, only observable when `loadRemoteModule`
+  actually crosses the federation boundary, which is exactly the one step
+  `ASSISTANT_REMOTE_LOADER` exists to substitute away in every other test.
+  It was caught with a real headless-browser run against both dev servers,
+  not a unit test.
 - Version Skew — a host and a remote built at different times, deployed
   independently, disagreeing about a contract — is a risk this pattern
   does not remove in general. It does not apply here today: `apps/console`

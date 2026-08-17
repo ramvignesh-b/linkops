@@ -6,7 +6,6 @@ import type { Provider } from '@angular/core';
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import {
-  ASSISTANT_REMOTE_LOADER,
   EVENT_SOURCE,
   STREAM_REOPEN_DELAY_MS,
   type EventSourceLike,
@@ -108,6 +107,16 @@ export async function bootConsole(
   stream: () => FakeEventSource;
 }> {
   const sources: FakeEventSource[] = [];
+
+  // Dynamic, not static: `console/feature-fleet` — where `ASSISTANT_REMOTE_LOADER`
+  // now lives, alongside `AssistantWrapper`, the one thing that injects it —
+  // is lazy-loaded from `app.routes.ts`, and `@nx/enforce-module-boundaries`
+  // bans this project from also statically importing a library it
+  // lazy-loads elsewhere. A dynamic `import()` is exactly the exemption the
+  // rule makes for this.
+  const { ASSISTANT_REMOTE_LOADER } = await import(
+    '@linkops/console/feature-fleet'
+  );
 
   TestBed.configureTestingModule({
     providers: [

@@ -213,10 +213,10 @@ produces, at any size — see [The Assistant remote](#the-assistant-remote).
 | `libs/server/a2ui-agent` | `POST /api/agent/ui` and the agent behind it — a one-method interface behind two implementations: the deterministic stub, and `GeminiAgent`, which asks Gemini for a recommendation and builds the Surface carrying it from the same builders the stub uses ([ADR-0012](docs/adr/0012-the-model-recommends-the-server-renders.md)). Both read the Roster and Telemetry through the providers every other feature shares and answer an Action with a confirmation Surface rather than a write, and `selectA2uiAgent`, the provider seam configuration chooses an implementation at. |
 | `libs/server/config` | The configuration seam — `API_PORT`, `SWAGGER_UI_ENABLED`, `ASSISTANT_PROVIDER`, `ASSISTANT_PROVIDER_KEY`, `ASSISTANT_MODEL` — validated for coherence at boot, not presence, and the one typed place every other library reads the result through. See [Configuration](#configuration). |
 | `apps/api` | Module registration only. |
-| `libs/console/data-access` | The Console's wire and its state: the stream client behind the `EVENT_SOURCE` token, schema validation of every frame, the Tick coalescer, and `FleetStore` — the Roster, the latest Sample per Link, the Summary and the connection state, holding all three of the first as one value so a Tick applies as one write. `TransportFailure` and `applyListQuery` — the Console's filter-and-sort over the store — live here too, alongside the triage panel's `AssistantClient` and `AssistantSession`, `AssistantFailure` (the third kind of failure, for a Server reply that answered but could not be used), and `ASSISTANT_REMOTE_LOADER` — the token behind fetching the Assistant remote's component, real in production, substituted in tests the same way `EVENT_SOURCE` is. |
+| `libs/console/data-access` | The Console's wire and its state: the stream client behind the `EVENT_SOURCE` token, schema validation of every frame, the Tick coalescer, and `FleetStore` — the Roster, the latest Sample per Link, the Summary and the connection state, holding all three of the first as one value so a Tick applies as one write. `TransportFailure` and `applyListQuery` — the Console's filter-and-sort over the store — live here too, alongside the triage panel's `AssistantClient` and `AssistantSession`, and `AssistantFailure`, the third kind of failure, for a Server reply that answered but could not be used. |
 | `libs/console/ui` | Presentational only, domain types in and events out, no store and no router: the Status pill, the Throughput-against-Capacity bar, the Summary Figure tile, the connection banner, the Fleet filter bar, and the A2UI renderer — `lib-a2ui-surface` and its six whitelisted components (`Surface`, `Card`, `Text`, `Button`, `Select`, `Metric`) plus the labelled fallback an unknown or over-bounded one degrades to. |
 | `libs/console/feature-assistant` | The triage panel itself, `AssistantPanel` — the Assistant remote's one exposed component, self-contained: it provides its own `AssistantSession`, opens a conversation on construction, and renders the A2UI Surface it gets back. Imported only by `apps/assistant`, never by `console/feature-fleet` — see [The Assistant remote](#the-assistant-remote). |
-| `libs/console/feature-fleet` | The `/links` route: the Fleet list, the Fleet-wide Summary header, the filter/sort controls above it, and `AssistantWrapper` — fetches the Assistant remote's component and mounts it, with a loading spinner while that fetch is in flight. The one place on this route permitted to inject state; the panel's own state lives inside the remote it mounts, not here. |
+| `libs/console/feature-fleet` | The `/links` route: the Fleet list, the Fleet-wide Summary header, the filter/sort controls above it, and `AssistantWrapper` — fetches the Assistant remote's component and mounts it, with a loading spinner while that fetch is in flight, using `ASSISTANT_REMOTE_LOADER` (real in production, substituted in tests the same way `EVENT_SOURCE` is — see [The Assistant remote](#the-assistant-remote) for why this token has to live here and not in `console/data-access`). The one place on this route permitted to inject state; the panel's own state lives inside the remote it mounts, not here. |
 | `libs/console/feature-link-detail` | The `/links/:id` and `/links/:id/edit` routes: one Link's configuration and readings, the Throughput sparkline over its recent history, both modes of the Link form, the version-conflict resolution and the delete. |
 | `apps/console` | The shell, the routes, the providers — including the real `EventSource` factory — the Module Federation host configuration, and the integration tests that drive the routed Console with only the browser's two network primitives faked, plus the one step no test environment can perform: fetching the Assistant remote's code, substituted the same way. |
 | `apps/assistant` | The Assistant remote — a separately built and served Angular application (port 4201) whose only job is exposing `AssistantPanel` as `./Component`. See [The Assistant remote](#the-assistant-remote). |
@@ -271,6 +271,25 @@ and that check would silently stop matching the moment the two were ever
 loaded together without this. Sharing the library keeps it one class,
 loaded once, regardless of which side of the federation boundary
 constructs or catches it.
+
+**`@angular-architects/native-federation` itself cannot be shared this
+way — and `ASSISTANT_REMOTE_LOADER` has to live somewhere that doesn't
+need it to be.** It is the package that establishes the shared-import
+mechanism in the first place, so `main.ts`'s own bootstrap import of it
+can never be resolved through that same mechanism. Left un-shared, it
+gets bundled independently everywhere it's imported — including into a
+`sharedMappings` library's own standalone bundle, which is exactly where
+`ASSISTANT_REMOTE_LOADER` briefly lived, in `console/data-access`, before
+this was diagnosed: two independently bundled copies of the package meant
+two separate instances of its module-scoped `federationPromise`, and
+`loadRemoteModule`, awaiting the copy `main.ts`'s `initFederation()` never
+touches, hung forever — no error, no request, a spinner nothing would ever
+resolve. The token lives in `console/feature-fleet` instead — lazy-loaded
+application code, bundled through the same graph as `main.ts` — where
+`loadRemoteModule` and `initFederation` share the one instance that
+matters. See [ADR-0014](docs/adr/0014-assistant-as-a-module-federation-remote.md)
+for the full account, including why no existing test in this repository
+would have caught it.
 
 **Version Skew.** The risk Module Federation is usually warned about is a
 host and a remote built at different times, deployed independently, and
