@@ -33,7 +33,9 @@ services:
     container_name: linkops-console
     restart: unless-stopped
     ports:
-      - '${PORT:-${CONSOLE_PORT:-80}}:80'
+      - '${PORT:-${CONSOLE_PORT:-8080}}:80'
+    expose:
+      - '80'
     depends_on:
       api:
         condition: service_healthy
