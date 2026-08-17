@@ -266,33 +266,45 @@ A summary of the library responsibilities:
 
 ## 8. How it works
 
-Data flows from a central simulator to the client in a unidirectional pipeline:
+The end-to-end flow answers five core questions about the architecture:
 
-```text
-  Simulator ── one Sample per Link, every second (1 Hz)
-      │
-      ├──► RingBuffer ── 300 Samples per Link, oldest evicted
-      │        └──► TelemetryPort ──► GET /api/links/:id/telemetry
-      │
-      └──► TelemetryBus ──► stream-api ─┬─ one batched link.telemetry frame per Tick
-                                        ├─ Roster diff vs the previous Tick:
-                                        │  link.created / updated / deleted / status
-                                        └─ fleet.summary
-                                              │
-                                    GET /api/stream (SSE)
-                                              │
-                                          EventSource
-                                              │
-                                    FleetStore, one write per Tick
-                                              │
-                                     signals ──► fleet page, detail page
+```mermaid
+flowchart TD
+    %% Server Side
+    subgraph Server ["Server (NestJS)"]
+        direction TB
+        SIM[Simulator]
+        RB[RingBuffer]
+        BUS[TelemetryBus]
+        API[Stream API]
+        
+        SIM -- "Generates 1 Sample/sec" --> BUS
+        SIM -- "Evicts oldest (300 limit)" --> RB
+        BUS -- "Derives Status & KPIs" --> API
+    end
+
+    %% Client Side
+    subgraph Client ["Browser (Angular)"]
+        direction TB
+        SSE[EventSource]
+        STORE[FleetStore]
+        UI[Components: Signals]
+    end
+
+    %% Network & Delivery
+    API -- "SSE (Batched per Tick):\nlink.telemetry\nlink.status\nfleet.summary" --> SSE
+    API -- "On Reconnect:\nfleet.snapshot" --> SSE
+    RB -. "Historical Data\nGET .../telemetry" .-> UI
+    
+    SSE -- "1 Write/Tick" --> STORE
+    STORE -- "Renders" --> UI
 ```
 
-- **Simulator**: Generates 1 Sample per Link per second.
-- **RingBuffer**: Retains the last 300 Samples per Link (capacity-bounded).
-- **SSE Stream**: Publishes one `link.telemetry` event per tick containing all new samples, collapsing N events into a single store write for the client.
-- **Status derivation**: Runs server-side only via `deriveStatus`. The client treats the received wire status as authoritative, ensuring dropped streams don't masquerade as dead links.
-- **Reconnection**: The client receives a fresh `fleet.snapshot` upon reconnect rather than replaying missed events.
+- **Where telemetry is generated**: The `Simulator` generates one sample per link every second (1 Hz).
+- **How a sample reaches the browser**: Samples flow into the `TelemetryBus`, which passes them to the `stream-api`. The API batches all samples for the tick into a single `link.telemetry` payload and streams it over SSE (`GET /api/stream`). The browser's `EventSource` receives the payload and writes it to the `FleetStore`.
+- **Where link status is derived**: Strictly on the **server** (`deriveStatus`). The client makes no assumptions; it treats the wire status as authoritative. This prevents a dropped SSE stream from masquerading as a dead link.
+- **Where client state lives**: In the `FleetStore`, which acts as the single source of truth for the browser. It writes exactly once per tick, pushing updates to the UI via Angular signals.
+- **What happens on reconnect**: There is no event replay. When a connection drops and reconnects, the server immediately publishes a fresh `fleet.snapshot` event. The client drops its stale state and fully resynchronizes from the snapshot.
 
 ## 9. API reference
 
