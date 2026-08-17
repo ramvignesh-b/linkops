@@ -113,6 +113,12 @@ naming the seam and pointing at `ASSISTANT_PROVIDER`.
 
 ## 5. Run it
 
+*(Optional)* Copy the example environment file to `.env` to configure your API keys or override defaults:
+
+```sh
+cp .env.example .env
+```
+
 To start the API and the Console together, run this command:
 
 ```sh
