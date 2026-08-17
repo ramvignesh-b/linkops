@@ -21,6 +21,23 @@ describe('loadEnvironment', () => {
     });
   });
 
+  it('yields the stub provider when optional env vars are passed as empty strings from container/UI environments', () => {
+    const environment = loadEnvironment({
+      SWAGGER_UI_ENABLED: '',
+      ASSISTANT_PROVIDER: '',
+      ASSISTANT_PROVIDER_KEY: '',
+      ASSISTANT_MODEL: '',
+    });
+
+    expect(environment).toEqual({
+      API_PORT: 3000,
+      SWAGGER_UI_ENABLED: false,
+      ASSISTANT_PROVIDER: 'stub',
+      ASSISTANT_PROVIDER_KEY: undefined,
+      ASSISTANT_MODEL: undefined,
+    });
+  });
+
   it('yields the configured ASSISTANT_MODEL when present', () => {
     expect(
       loadEnvironment({ ASSISTANT_MODEL: 'gemini-3.6-flash' }).ASSISTANT_MODEL,

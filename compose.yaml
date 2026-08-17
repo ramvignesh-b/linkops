@@ -10,17 +10,17 @@ services:
     environment:
       - API_PORT=3000
       - SWAGGER_UI_ENABLED=${SWAGGER_UI_ENABLED:-true}
-      - ASSISTANT_PROVIDER=${ASSISTANT_PROVIDER:-stub}
-      - ASSISTANT_PROVIDER_KEY=${ASSISTANT_PROVIDER_KEY:-}
-      - ASSISTANT_MODEL=${ASSISTANT_MODEL:-}
+      - ASSISTANT_PROVIDER
+      - ASSISTANT_PROVIDER_KEY
+      - ASSISTANT_MODEL
     expose:
       - '3000'
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3000/api/fleet/summary']
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
+      test: ['CMD', 'curl', '-f', 'http://127.0.0.1:3000/api/fleet/summary']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - linkops-network
 
@@ -45,9 +45,9 @@ services:
           '--quiet',
           '--tries=1',
           '--spider',
-          'http://localhost/healthz',
+          'http://127.0.0.1/healthz',
         ]
-      interval: 10s
+      interval: 5s
       timeout: 3s
       retries: 3
       start_period: 5s

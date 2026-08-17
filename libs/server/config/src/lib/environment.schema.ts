@@ -32,12 +32,15 @@ const booleanFlagSchema = z
  * actually knows, instead of hand-maintaining a second list that could
  * drift from this one.
  */
+const emptyToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((val) => (val === '' ? undefined : val), schema);
+
 export const environmentShapeSchema = z.object({
   API_PORT: z.coerce.number().int().positive().default(3000),
-  SWAGGER_UI_ENABLED: booleanFlagSchema,
-  ASSISTANT_PROVIDER: assistantProviderSchema.default('stub'),
-  ASSISTANT_PROVIDER_KEY: z.string().min(1).optional(),
-  ASSISTANT_MODEL: z.string().min(1).optional(),
+  SWAGGER_UI_ENABLED: emptyToUndefined(booleanFlagSchema),
+  ASSISTANT_PROVIDER: emptyToUndefined(assistantProviderSchema.default('stub')),
+  ASSISTANT_PROVIDER_KEY: emptyToUndefined(z.string().min(1).optional()),
+  ASSISTANT_MODEL: emptyToUndefined(z.string().min(1).optional()),
 });
 
 /**

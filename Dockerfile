@@ -60,8 +60,8 @@ USER node
 
 EXPOSE 3000
 
-HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:${API_PORT:-3000}/api/fleet/summary || exit 1
+HEALTHCHECK --interval=5s --timeout=5s --start-period=10s --retries=5 \
+  CMD curl -f http://127.0.0.1:${API_PORT:-3000}/api/fleet/summary || exit 1
 
 CMD ["node", "main.js"]
 
@@ -83,7 +83,7 @@ COPY --from=builder /app/dist/apps/console/browser /usr/share/nginx/html
 
 EXPOSE 80
 
-HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost/healthz || exit 1
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://127.0.0.1/healthz || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
