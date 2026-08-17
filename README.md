@@ -207,8 +207,8 @@ dev-mode checks, so production should cost at most this, not more.
 | `libs/server/links-api` | The HTTP surface — `GET /api/links`, `GET /api/links/:id`, `POST /api/links`, `PATCH /api/links/:id`, `DELETE /api/links/:id`, `GET /api/links/:id/telemetry`, `GET /api/fleet/summary` — the DTOs `createZodDto` generates from the shared schemas, the globally registered `nestjs-zod` validation pipe, and the one exception filter mapping domain errors onto the error envelope. |
 | `libs/server/stream-api` | `GET /api/stream`, the Tick-to-events pipeline every connection shares, and the subscriber count that makes release observable. |
 | `libs/shared/a2ui-protocol` | The Assistant's wire contract: the A2UI envelope, the request union — opening a conversation and the Action that carries an operator's choice back — the flat component list, the whitelisted component names, the depth and count caps as constants, and the guarded JSON-Pointer read and write. Framework-free, one runtime dependency: zod. |
-| `libs/server/a2ui-agent` | `POST /api/agent/ui` and the agent behind it — a one-method interface, the deterministic stub that implements it by reading the Roster and Telemetry through the providers every other feature shares, answering an Action with a confirmation Surface rather than a write, and `selectA2uiAgent`, the provider seam configuration chooses an implementation at. |
-| `libs/server/config` | The configuration seam — `PORT`, `SWAGGER_UI_ENABLED`, `ASSISTANT_PROVIDER`, `ASSISTANT_PROVIDER_KEY` — validated for coherence at boot, not presence, and the one typed place every other library reads the result through. See [Configuration](#configuration). |
+| `libs/server/a2ui-agent` | `POST /api/agent/ui` and the agent behind it — a one-method interface behind two implementations: the deterministic stub, and `GeminiAgent`, which asks Gemini for a recommendation and builds the Surface carrying it from the same builders the stub uses ([ADR-0012](docs/adr/0012-the-model-recommends-the-server-renders.md)). Both read the Roster and Telemetry through the providers every other feature shares and answer an Action with a confirmation Surface rather than a write, and `selectA2uiAgent`, the provider seam configuration chooses an implementation at. |
+| `libs/server/config` | The configuration seam — `API_PORT`, `SWAGGER_UI_ENABLED`, `ASSISTANT_PROVIDER`, `ASSISTANT_PROVIDER_KEY`, `ASSISTANT_MODEL` — validated for coherence at boot, not presence, and the one typed place every other library reads the result through. See [Configuration](#configuration). |
 | `apps/api` | Module registration only. |
 | `libs/console/data-access` | The Console's wire and its state: the stream client behind the `EVENT_SOURCE` token, schema validation of every frame, the Tick coalescer, and `FleetStore` — the Roster, the latest Sample per Link, the Summary and the connection state, holding all three of the first as one value so a Tick applies as one write. `TransportFailure` and `applyListQuery` — the Console's filter-and-sort over the store — live here too, alongside the triage panel's `AssistantClient` and `AssistantSession`, and `AssistantFailure`, the third kind of failure for a Server reply that answered but could not be used. |
 | `libs/console/ui` | Presentational only, domain types in and events out, no store and no router: the Status pill, the Throughput-against-Capacity bar, the Summary Figure tile, the connection banner, the Fleet filter bar, and the A2UI renderer — `lib-a2ui-surface` and its six whitelisted components (`Surface`, `Card`, `Text`, `Button`, `Select`, `Metric`) plus the labelled fallback an unknown or over-bounded one degrades to. |
@@ -732,10 +732,11 @@ any of these locally; every value there is a placeholder, never a real key.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `PORT` | `3000` | The port the API listens on |
+| `API_PORT` | `3000` | The port the API listens on |
 | `SWAGGER_UI_ENABLED` | `false` | Mounts the interactive Swagger explorer at `GET /api` when `true`. `GET /api/openapi.json` is served either way — see [OpenAPI document](#openapi-document) |
 | `ASSISTANT_PROVIDER` | `stub` | `stub` needs no key and is what ships in this repository. `gemini` and `anthropic` each select a real model client behind the `A2uiAgent` seam (`libs/server/a2ui-agent`) — see below |
 | `ASSISTANT_PROVIDER_KEY` | *(none)* | Required only when `ASSISTANT_PROVIDER` is `gemini` or `anthropic`. Never logged and never sent to the Console — the Console has no knowledge that a provider concept exists at all |
+| `ASSISTANT_MODEL` | `gemini-3.7-flash` | The model identifier used when `ASSISTANT_PROVIDER=gemini` |
 
 **No credentials, no problem.** An empty environment is coherent by
 construction — nothing here is *required* — which is what makes "clone,
@@ -745,7 +746,7 @@ file ever existing.
 **Fail fast, naming the variable.** Three things stop the boot, each
 naming what caused it rather than leaving a stack trace to read:
 
-- a variable present but invalid — `PORT=nope`, `SWAGGER_UI_ENABLED=yes`;
+- a variable present but invalid — `API_PORT=nope`, `SWAGGER_UI_ENABLED=yes`;
 - `ASSISTANT_PROVIDER=gemini` or `ASSISTANT_PROVIDER=anthropic` with
   `ASSISTANT_PROVIDER_KEY` absent or empty — the two are coherent together
   or not at all;
@@ -754,15 +755,23 @@ naming what caused it rather than leaving a stack trace to read:
   had configured a model, e.g. a typo'd key name that the schema silently
   never reads.
 
-**Choosing a model provider is a boot failure, not a silent downgrade.**
-`ASSISTANT_PROVIDER=gemini` or `=anthropic` with its key present is
-coherent — the schema accepts it — but no model client ships in this
-repository yet, and the seam (`selectA2uiAgent` in `libs/server/a2ui-agent`)
-refuses to fall back to the stub quietly. Silently downgrading would make
-every rule above pointless: the one thing an operator explicitly asked for
-would be the one thing that silently did not happen. The boot fails
-instead, with a message naming the seam and pointing at
-`ASSISTANT_PROVIDER`.
+**`gemini` ships; `anthropic` is a boot failure, not a silent downgrade.**
+`ASSISTANT_PROVIDER=gemini` with its key present builds `GeminiAgent`
+(`libs/server/a2ui-agent`): it pre-filters the Fleet down to the Links the
+shared presenter already considers degraded, and asks Gemini which of them to
+look at first, which Remediation to consider, and why. The Surface carrying
+that answer is built here, by the same builders the stub uses — the model
+supplies the judgement and the words, never the document, which is what makes
+a blank panel unexpressible rather than merely unlikely. The reasoning, and
+the three failure modes that produced it, are recorded in
+[ADR-0012](docs/adr/0012-the-model-recommends-the-server-renders.md).
+`ASSISTANT_PROVIDER=anthropic` with its key present is
+equally coherent — the schema accepts it — but no model client ships for it,
+and the seam (`selectA2uiAgent` in `libs/server/a2ui-agent`) refuses to fall
+back to the stub quietly. Silently downgrading would make every rule above
+pointless: the one thing an operator explicitly asked for would be the one
+thing that silently did not happen. The boot fails instead, with a message
+naming the seam and pointing at `ASSISTANT_PROVIDER`.
 
 ## Development
 
