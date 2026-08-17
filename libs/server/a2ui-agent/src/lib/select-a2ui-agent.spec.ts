@@ -37,7 +37,7 @@ const telemetry: TelemetryPort = {
 };
 
 /**
- * The seam ticket 41 exists for: an `AssistantProvider` value in, an
+ * The seam ticket `41` exists for: an `AssistantProvider` value in, an
  * `A2uiAgent` out (or a boot failure) — the one place `ServerA2uiAgentModule`
  * decides which implementation `A2UI_AGENT` resolves to.
  */
