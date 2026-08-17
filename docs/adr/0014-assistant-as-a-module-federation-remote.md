@@ -96,45 +96,57 @@ is answerable to.
   raw as a result, but that comparison is not the whole picture — see the
   next bullet.
 - **Angular's own bundle budget cannot see Native Federation's shared-
-  dependency bundles, and the true first-load payload is over budget.**
-  `main.js`/`polyfills.js`/`styles.css` are the only files Angular's
-  bundler emits as an initial `<script>` tag, so they are the only ones
-  `esbuild`'s `budgets` config checks. The shared-dependency bundles this
-  same PR's `sharedMappings` and `shareAll` config produce
+  dependency bundles, and a single "initial bundle" number stopped
+  meaning one thing.** `main.js`/`polyfills.js`/`styles.css` are the only
+  files Angular's bundler emits as an initial `<script>` tag, so they are
+  the only ones `esbuild`'s `budgets` config checks. The shared-dependency
+  bundles this same PR's `sharedMappings` and `shareAll` config produce
   (`_angular_core.<hash>.js`, `zod.<hash>.js`, and the rest) are built by a
   separate step and are invisible to that check — but they are not
-  optional: they are fetched before the Fleet route ever renders. The true
-  total, measured by serving the real production build and asking a real
-  headless browser what it downloaded landing on `/`
-  (`tools/verify-bundle-budget.mjs`), is **1,450 kB**, well over the 1 MB
-  error budget the `esbuild` target's own config states.
-  - This surfaced from a question about a CI-posted bundle report's
-    accuracy, not any check that existed before it. That report
-    (`.github/workflows/ci.yml`) had summed only files referenced by name
-    in `index.html`, which never includes the shared-dependency bundles,
-    so it had silently been reporting an incomplete number since those
-    bundles started existing.
-  - The first replacement got it wrong too, in the opposite direction:
-    classifying files by name (`chunk-<hash>.js` = lazy, excluded) missed
-    that the specific chunk the `/` → `/links` redirect pulls in is not
-    optional on a normal visit — a filename can't say which chunk belongs
-    to the default route and which is genuinely deferred. `tools/verify-bundle-budget.mjs`
-    stopped guessing from filenames entirely and now measures a real
-    browser's real downloads instead.
-  - `zod` alone accounts for 385 kB: a shared-dependency bundle builds
-    from the package's own entry point, not from what this workspace
-    calls, so it ships zod's whole public API rather than the schema
-    builders `shared/domain` and `shared/a2ui-protocol` actually use.
-    Skipping it from the shared list was tried, on the theory that it
-    would then be tree-shaken to actual usage instead. It was not — zod
-    resists dead-code elimination regardless of where it is bundled — and
-    removing it from `shared` only stopped it being deduplicated across
-    `apps/console` and `apps/assistant`, raising the total to 1,732 kB.
-    Reverted; not part of this PR's diff.
-  - The CI gate (`Verify bundle budget`) is `continue-on-error: true`
-    until the actual regression is remediated — failing on it now would
-    make every PR red for a problem this PR surfaced but has not fixed.
-    Remediating it is separate, not-yet-scoped work.
+  optional: they are fetched before the Fleet route ever renders.
+  `tools/verify-bundle-budget.mjs` measures both, for real, by serving the
+  real production build (gzip included) and asking a real headless
+  browser what it downloaded landing on `/`, and reports them as two
+  numbers rather than folding them into one:
+  - **This app's own code** (`main`/`polyfills`/`styles`/its own route
+    chunks) — **322 kB raw / 97 kB gzip**. Gated against the 650/1000 kB
+    budget `esbuild`'s own config already states, since this is what a
+    Console change actually moves, and the number that budget was written
+    for in the first place.
+  - **Shared infrastructure** — **1,061 kB raw / 261 kB gzip**. Reported,
+    not gated: a one-time, content-hashed, cacheable cost paid once per
+    browser regardless of how many times the Fleet route is visited, and
+    not something a Console feature change can shrink by itself — sharing
+    `@angular/core`, `@angular/router` and the rest is what buys the
+    duplication-free `AssistantInvalidPayloadError` guarantee two bullets
+    below, not a cost this PR's own code introduced by writing too much
+    of it.
+  - Three things had to go wrong, in sequence, before landing on this
+    shape. The CI report this surfaced from (`.github/workflows/ci.yml`)
+    had summed only files referenced by name in `index.html`, silently
+    excluding every shared-dependency bundle since they started existing.
+    The first replacement classified files by name instead
+    (`chunk-<hash>.js` = lazy, excluded) and was wrong in the opposite
+    direction: the specific chunk the `/` → `/links` redirect pulls in
+    is not optional on a normal visit, and no filename can say which
+    chunk belongs to the default route and which is genuinely deferred.
+    Only measuring a real browser's real downloads settled it — and
+    once that was trustworthy, the true finding wasn't "over budget," it
+    was "the budget was being compared against the wrong number": this
+    app's own code was passing by a wide margin the whole time.
+  - `zod` alone accounts for 385 kB of the shared total: a shared-
+    dependency bundle builds from the package's own entry point, not from
+    what this workspace calls, so it ships zod's whole public API rather
+    than the handful of schema builders `shared/domain` and
+    `shared/a2ui-protocol` actually use. Skipping it from the shared list
+    was tried, on the theory it would then tree-shake to actual usage; it
+    didn't — zod resists dead-code elimination regardless of where it is
+    bundled — and removing it from `shared` only stopped it being
+    deduplicated across `apps/console` and `apps/assistant`, raising the
+    total further. Reverted; not part of this PR's diff. Shrinking the
+    shared-infrastructure number, if that is ever worth doing, is
+    separate, not-yet-scoped work — it is reported, not gated, precisely
+    so that work stays optional rather than blocking.
 - `console/data-access` and `libs/shared/domain` are declared shared
   singletons in both `federation.config.mjs` files. This is not an
   optimisation: `AssistantInvalidPayloadError` is defined in

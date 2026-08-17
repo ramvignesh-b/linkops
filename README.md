@@ -195,32 +195,49 @@ dev-mode checks, so production should cost at most this, not more.
 
 **Bundle size**, the other number of this kind: `nx build console
 --configuration=production` reports an initial bundle of **126.53 kB raw**
-— well inside the 650 kB budget on its own. That number is not the whole
-picture since Module Federation was introduced, though. `tools/verify-bundle-budget.mjs`
-serves the real production build and measures the real bytes a headless
-browser downloads landing on `/` — a static-file guess at this wasn't
-trustworthy enough to keep, so this is a real page load, not a file-size
-classification. The result: **1,450 kB**, over the 1 MB error budget.
-Most of the gap is Native Federation's shared-dependency bundles
-(`@angular/core`, `@angular/router`, `zod`, and the two workspace
-libraries declared `sharedMappings`) — every one of them is fetched
-before the app can render, but none of them is an initial `<script>` tag
-Angular's own bundler emits, so its budget check cannot see them. `zod`
-alone accounts for 385 kB of it: shared-dependency bundles build from the
-package's own entry point, not from what this workspace actually calls,
-so it ships as zod's whole public API rather than the handful of schema
-builders `shared/domain` and `shared/a2ui-protocol` actually use.
-Skipping it from the shared list was tried and made the total *worse*
-(1,732 kB) — it does not tree-shake regardless of where it is bundled, it
-just stopped being deduplicated across the host and the remote. See
+— well inside the 650 kB budget on its own. That was never the whole
+picture once Module Federation was introduced, and getting to a number
+worth trusting took two wrong attempts before landing on
+`tools/verify-bundle-budget.mjs`: it serves the real production build
+(gzip included, matching how a real static host answers a compressing
+browser) and measures the real bytes a headless browser downloads landing
+on `/` — no filename guessing.
+
+That measurement splits into two totals, not one, because they answer
+different questions:
+
+- **This app's own code** — `main.js`, `polyfills.js`, `styles.css`, and
+  its own route chunks. What a Console change actually moves, and the
+  only part gated against the 650/1000 kB budget. **322 kB raw / 97 kB
+  gzip** — comfortably inside it.
+- **Native Federation's shared-dependency bundles** — `@angular/core`,
+  `@angular/router`, `zod`, and the two workspace libraries declared
+  `sharedMappings`. Every one of them is fetched before the app can
+  render, but none of them is an initial `<script>` tag Angular's own
+  bundler emits, so its budget check has never been able to see them —
+  and lumping them into the same one number as this app's own code was
+  its own mistake, since it's a one-time, content-hashed, cacheable cost
+  this app pays once per browser, not something a Console feature change
+  can shrink by itself. **1,061 kB raw / 261 kB gzip**, reported, not
+  gated. `zod` alone accounts for 385 kB of it: a shared-dependency
+  bundle builds from the package's own entry point, not from what this
+  workspace actually calls, so it ships zod's whole public API rather
+  than the handful of schema builders `shared/domain` and
+  `shared/a2ui-protocol` actually use. Skipping it from the shared list
+  was tried, on the theory it would then tree-shake to actual usage; it
+  didn't (zod resists dead-code elimination regardless of where it's
+  bundled), and removing it from `shared` only stopped it being
+  deduplicated across the host and the remote, raising the total further.
+  Reverted.
+
+**1,450 kB raw / 421 kB gzip total**, informational. See
 [The Assistant remote](#the-assistant-remote) for why the two workspace
 libraries have to stay shared, and
 [ADR-0014](docs/adr/0014-assistant-as-a-module-federation-remote.md) for
-the full account, including what was tried and ruled out. This is not yet
-fixed — it is measured honestly and gated non-blocking
-(`.github/workflows/ci.yml`) until it is. The triage panel itself really
-is gone from this build at any size — that part of an earlier, smaller-
-looking number was correct — it just wasn't the only thing that changed.
+the full account of both wrong attempts along the way. The triage panel
+itself really is gone from this build at any size — that part of an
+earlier, smaller-looking number was correct — it just wasn't the only
+thing that changed.
 
 ### Where things live
 

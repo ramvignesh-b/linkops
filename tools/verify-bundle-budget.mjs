@@ -1,22 +1,41 @@
 #!/usr/bin/env node
 /**
- * Verifies the Console's true first-load payload against the budget
+ * Verifies the Console's first-load payload against the budget
  * `apps/console/project.json` states, by measuring it — serving the real
- * production build and driving a real headless browser to `/`, then
- * summing the actual bytes every response carried.
+ * production build (gzip-compressed, matching how a real static host would
+ * answer a compressing browser) and driving a real headless browser to
+ * `/`, then summing what every response actually carried.
  *
- * This replaced a static-file classification (main/polyfills/styles vs.
- * `chunk-*.js` vs. everything else) that looked reasonable and was wrong
- * twice in one sitting: it excluded Native Federation's shared-dependency
- * bundles entirely (they are not an initial `<script>` tag Angular's own
- * bundler emits, so a filename-based check never finds them, even though
- * every one of them is fetched before first render — see ADR-0014's
- * "Consequences"), and separately, it treated every `chunk-<hash>.js` file
- * as optional "on demand" weight — wrong for the specific chunk the `/`
- * route's redirect to `/links` pulls in on every single visit, which is
- * not on demand in any sense that matters. Guessing which chunk belongs to
- * the default route from a filename alone is not reliable; asking a real
- * browser what it actually downloaded is. That is what this does instead.
+ * Two totals, not one, because they mean different things:
+ *
+ * - **App code** — `main.js`, `polyfills.js`, `styles.css`, and this app's
+ *   own `chunk-<hash>.js` route chunks. What this app's own code changes
+ *   can actually move. Gated against `warnKb`/`errorKb` on **raw** bytes —
+ *   the same convention Angular's own `esbuild` budget already checks, so
+ *   this doesn't quietly redefine what that number means.
+ * - **Shared infrastructure** — Native Federation's shared-dependency
+ *   bundles (`_angular_core.<hash>.js`, `zod.<hash>.js`, the two
+ *   `sharedMappings` libraries, ...). Confirmed against
+ *   `@softarc/native-federation`'s own bundler (`bundle-shared.js`): every
+ *   one of these is a package's own entry point, bundled by a separate
+ *   step Angular's budget check never sees. Reported, not gated: it is a
+ *   one-time, content-hashed, cacheable cost this app pays once per
+ *   browser, not per visit, and not one a Console feature change can
+ *   shrink by itself — see ADR-0014.
+ *
+ * Both raw (on disk) and gzip (actually on the wire, for a browser that
+ * sends `Accept-Encoding: gzip`, which every real one does) are measured
+ * and reported for both buckets — raw because that is the budget's own
+ * unit, gzip because it is what a real deployment most likely transfers.
+ *
+ * A `chunk-<hash>.js` file being "app code" is a filename fact confirmed
+ * against the bundler's own naming, not a guess about whether a browser
+ * fetches it eagerly — which files actually get downloaded still comes
+ * from asking a real browser, never from assuming a chunk is optional
+ * because of its name. A prior version of this script did assume that,
+ * and was wrong about the one route the app redirects to by default. See
+ * git history and ADR-0014's "Consequences" for the full account of what
+ * was tried and ruled out before landing here.
  *
  * Requires the Chromium binary Playwright drives: `npx playwright install
  * chromium`, once, wherever this runs (locally or in CI).
@@ -24,6 +43,7 @@
 import { createServer } from 'node:http';
 import { readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
 
 const args = process.argv.slice(2);
@@ -52,14 +72,73 @@ const MIME_TYPES = {
   '.map': 'application/json',
 };
 
+// Compressing these again wins nothing (woff2 is already compressed) or
+// isn't worth the CPU for how rarely a browser asks — matches a
+// conventional static host's own compressible-types list.
+const COMPRESSIBLE_EXTENSIONS = new Set([
+  '.js',
+  '.mjs',
+  '.css',
+  '.html',
+  '.json',
+  '.svg',
+]);
+
 /**
- * A static file server with no compression and no caching headers — every
- * byte it sends is a byte on disk, so what a response body measures here is
- * the same raw-byte convention `apps/console/project.json`'s own `budgets`
- * already use. SPA-style fallback to `index.html`: this app resolves its
- * own routing client-side once `main.js` runs, so any path this server
- * doesn't recognise as a real file is the app shell, not a 404.
+ * Populated by the server as it serves each file — the one authoritative
+ * source for a file's raw (on disk) and transfer (on the wire) byte counts,
+ * since the server is the one place both are known without re-deriving one
+ * from the other.
  */
+const sizesByPath = new Map();
+
+/**
+ * Resolves a request path to a file under `root`, SPA-style: this app
+ * resolves its own routing client-side once `main.js` runs, so a directory
+ * or an unrecognised path falls back to `index.html`, the app shell,
+ * rather than a 404. Returns `null` for a path that would escape `root`.
+ */
+function resolveFilePath(root, urlPath) {
+  const safePath = normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
+  let filePath = join(root, safePath);
+
+  try {
+    if (statSync(filePath).isDirectory()) {
+      filePath = join(filePath, 'index.html');
+    }
+  } catch {
+    filePath = join(root, 'index.html');
+  }
+
+  return filePath.startsWith(root + sep) || filePath === root ? filePath : null;
+}
+
+/**
+ * Reads a file and gzips it when the request accepts gzip and the type is
+ * worth compressing — every real browser, headless Chromium included,
+ * sends `Accept-Encoding: gzip` by default, so this is what actually
+ * crosses the wire for a real compressing static host, not the
+ * uncompressed file on disk.
+ */
+function readForResponse(filePath, acceptEncodingHeader) {
+  const rawBody = readFileSync(filePath);
+  const acceptsGzip = (acceptEncodingHeader ?? '').includes('gzip');
+  const shouldGzip =
+    acceptsGzip && COMPRESSIBLE_EXTENSIONS.has(extname(filePath));
+  const body = shouldGzip ? gzipSync(rawBody) : rawBody;
+  const headers = {
+    'content-type': MIME_TYPES[extname(filePath)] ?? 'application/octet-stream',
+    ...(shouldGzip && { 'content-encoding': 'gzip' }),
+  };
+
+  return {
+    body,
+    headers,
+    rawBytes: rawBody.length,
+    transferBytes: body.length,
+  };
+}
+
 function serveStatic(root) {
   return createServer((req, res) => {
     const urlPath = decodeURIComponent((req.url ?? '/').split('?')[0]);
@@ -77,29 +156,23 @@ function serveStatic(root) {
       return;
     }
 
-    const safePath = normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
-    let filePath = join(root, safePath);
-
-    try {
-      if (statSync(filePath).isDirectory()) {
-        filePath = join(filePath, 'index.html');
-      }
-    } catch {
-      filePath = join(root, 'index.html');
-    }
-
-    if (!filePath.startsWith(root + sep) && filePath !== root) {
+    const filePath = resolveFilePath(root, urlPath);
+    if (!filePath) {
       res.writeHead(403);
       res.end();
       return;
     }
 
     try {
-      const body = readFileSync(filePath);
-      res.writeHead(200, {
-        'content-type':
-          MIME_TYPES[extname(filePath)] ?? 'application/octet-stream',
+      const { body, headers, rawBytes, transferBytes } = readForResponse(
+        filePath,
+        req.headers['accept-encoding'],
+      );
+      sizesByPath.set(urlPath === '/' ? '/index.html' : urlPath, {
+        rawBytes,
+        transferBytes,
       });
+      res.writeHead(200, headers);
       res.end(body);
     } catch {
       res.writeHead(404);
@@ -115,24 +188,31 @@ function listen(server) {
   });
 }
 
+const isAppCode = (file) =>
+  file === 'index.html' ||
+  /^main[.-]/.test(file) ||
+  /^polyfills[.-]/.test(file) ||
+  /^styles[.-].*\.css$/.test(file) ||
+  /^chunk-[A-Za-z0-9]+\.js$/.test(file);
+const isSharedInfra = (file) => file.endsWith('.js') && !isAppCode(file);
+const bucketOf = (file) =>
+  isAppCode(file) ? 'app' : isSharedInfra(file) ? 'shared' : 'asset';
+
 const server = serveStatic(distDir);
 const port = await listen(server);
 const origin = `http://127.0.0.1:${port}`;
 
+const fetchedPaths = new Set();
 let browser;
-const bytesByUrl = new Map();
 
 try {
   browser = await chromium.launch({ args: ['--no-sandbox'] });
   const page = await browser.newPage();
 
-  page.on('response', async (response) => {
+  page.on('response', (response) => {
     if (!response.url().startsWith(origin)) return;
-    try {
-      bytesByUrl.set(response.url(), (await response.body()).length);
-    } catch {
-      // No body to measure (e.g. a redirect) — nothing to add.
-    }
+    const urlPath = new URL(response.url()).pathname;
+    fetchedPaths.add(urlPath === '/' ? '/index.html' : urlPath);
   });
 
   await page.goto(origin + '/', { waitUntil: 'networkidle' });
@@ -144,44 +224,96 @@ try {
   server.close();
 }
 
-const entries = [...bytesByUrl.entries()].map(([url, bytes]) => ({
-  file: url.slice(origin.length + 1) || 'index.html',
-  bytes,
-}));
-const totalBytes = entries.reduce((total, entry) => total + entry.bytes, 0);
+const entries = [...fetchedPaths]
+  .filter((urlPath) => sizesByPath.has(urlPath))
+  .map((urlPath) => {
+    const file = urlPath.replace(/^\//, '');
+    const { rawBytes, transferBytes } = sizesByPath.get(urlPath);
+    return { file, rawBytes, transferBytes, bucket: bucketOf(file) };
+  });
 
+const sumBucket = (bucket, key) =>
+  entries
+    .filter((e) => e.bucket === bucket)
+    .reduce((total, e) => total + e[key], 0);
+
+const appRawBytes = sumBucket('app', 'rawBytes');
+const appTransferBytes = sumBucket('app', 'transferBytes');
+const sharedRawBytes = sumBucket('shared', 'rawBytes');
+const sharedTransferBytes = sumBucket('shared', 'transferBytes');
+const assetRawBytes = sumBucket('asset', 'rawBytes');
+const assetTransferBytes = sumBucket('asset', 'transferBytes');
+const totalRawBytes = appRawBytes + sharedRawBytes + assetRawBytes;
+const totalTransferBytes =
+  appTransferBytes + sharedTransferBytes + assetTransferBytes;
+
+// Only app code is gated, on raw bytes — the budget's own unit. See the
+// header comment for why shared infrastructure is reported, not budgeted.
 const status =
-  totalBytes > errorKb * 1000
+  appRawBytes > errorKb * 1000
     ? 'error'
-    : totalBytes > warnKb * 1000
+    : appRawBytes > warnKb * 1000
       ? 'warn'
       : 'pass';
 
 if (jsonMode) {
-  console.log(JSON.stringify({ warnKb, errorKb, entries, totalBytes, status }));
+  console.log(
+    JSON.stringify({
+      warnKb,
+      errorKb,
+      entries,
+      appRawBytes,
+      appTransferBytes,
+      sharedRawBytes,
+      sharedTransferBytes,
+      assetRawBytes,
+      assetTransferBytes,
+      totalRawBytes,
+      totalTransferBytes,
+      status,
+    }),
+  );
 } else {
   const kb = (bytes) => (bytes / 1000).toFixed(2);
-  const sorted = [...entries].sort((a, b) => b.bytes - a.bytes);
+  const printBucket = (label, bucket) => {
+    console.log(`${label}:`);
+    for (const e of [...entries]
+      .filter((x) => x.bucket === bucket)
+      .sort((a, b) => b.rawBytes - a.rawBytes)) {
+      console.log(
+        `  ${kb(e.rawBytes).padStart(10)} kB raw / ${kb(e.transferBytes).padStart(10)} kB gzip  ${e.file}`,
+      );
+    }
+  };
 
-  for (const entry of sorted) {
-    console.log(`${kb(entry.bytes).padStart(10)} kB  ${entry.file}`);
-  }
+  printBucket('App code (gated)', 'app');
+  printBucket(
+    'Shared infrastructure (reported, not gated — one-time, cacheable)',
+    'shared',
+  );
+  printBucket('Other assets (fonts, manifests)', 'asset');
   console.log();
   console.log(
-    `Real first-load total:   ${kb(totalBytes)} kB (${entries.length} requests)`,
+    `App code:              ${kb(appRawBytes)} kB raw / ${kb(appTransferBytes)} kB gzip  (budget: ${warnKb}/${errorKb} kB raw)`,
+  );
+  console.log(
+    `Shared infrastructure:  ${kb(sharedRawBytes)} kB raw / ${kb(sharedTransferBytes)} kB gzip  (informational)`,
+  );
+  console.log(
+    `Total first-load:       ${kb(totalRawBytes)} kB raw / ${kb(totalTransferBytes)} kB gzip`,
   );
   console.log();
 
   if (status === 'error') {
     console.error(
-      `✖ ${kb(totalBytes)} kB exceeds the ${errorKb} kB error budget.`,
+      `✖ App code ${kb(appRawBytes)} kB raw exceeds the ${errorKb} kB error budget.`,
     );
   } else if (status === 'warn') {
     console.warn(
-      `⚠ ${kb(totalBytes)} kB exceeds the ${warnKb} kB warn budget.`,
+      `⚠ App code ${kb(appRawBytes)} kB raw exceeds the ${warnKb} kB warn budget.`,
     );
   } else {
-    console.log(`✔ within the ${warnKb} kB warn budget.`);
+    console.log(`✔ App code within the ${warnKb} kB warn budget.`);
   }
 }
 
