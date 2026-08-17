@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted. Implements and extends
+Accepted, with the warn budget since tightened — see
+[Corrections](#corrections). Implements and extends
 [ADR-0014](./0014-programmatic-component-remotes-for-module-federation.md),
 which chose programmatic Component Remotes over the Angular Router for this
 integration. That choice holds exactly as recorded; this ADR covers what
@@ -218,3 +219,16 @@ is answerable to.
   build`, with exactly one deployment path. See
   [the README's Version Skew note](../../README.md#the-assistant-remote)
   for what would have to change before that stopped being true.
+
+## Corrections
+
+Each entry names a claim that was in the original text and what replaced it.
+
+**1. "Gated against the 650/1000 kB budget" → 500/1000 kB.**
+The warn threshold was tightened on 2026-08-17, once measuring app code
+separately from shared infrastructure showed this app's own code sitting at
+322 kB — far enough inside 650 kB that the number was no longer telling anyone
+anything. The error budget is unchanged at 1 MB, and the two-bucket split this
+ADR records is unchanged. The earlier reference under "Why" to the budget the
+Console "was tuned against" stays as written: it describes what was true when
+the remote was built.

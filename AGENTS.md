@@ -37,7 +37,7 @@ Three rules lint cannot express. Everything else about an Angular component here
 
 ### Console bundle budget & route discipline
 
-The Console's initial render-blocking bundle is capped in `apps/console/project.json` (650 kB warning, 1 MB error). Initial load is reserved for the shell, global design tokens, and core telemetry infrastructure.
+The Console's initial render-blocking bundle is capped in `apps/console/project.json` (500 kB warning, 1 MB error). Initial load is reserved for the shell, global design tokens, and core telemetry infrastructure.
 
 - **Feature screens are lazy-loaded.** Every routed feature library is imported dynamically via route-level `loadChildren` (e.g. `loadChildren: () => import('@linkops/console/feature-...').then(m => m.routes)`). Feature dependencies (charts, forms, complex visualizers) must not leak into the initial render-blocking bundle.
 - **Media and fonts are self-hosted.** Fonts are imported via `@fontsource-variable/*` and bundled into `media/` as woff2 files. They are loaded asynchronously with `unicode-range` subsetting and do not count against the `initial` JS/CSS budget.
