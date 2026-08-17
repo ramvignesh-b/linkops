@@ -2,14 +2,14 @@ import type { LinkId, TelemetrySample } from '@linkops/shared/domain';
 import type { DegradationEpisode } from './degradation-episode';
 import type { Random } from './random';
 
-// Mean-reversion targets. Chosen so a freshly-created Link's first Sample
-// reads comfortably `up` (`deriveStatus`'s thresholds are `snrDb >= 18` and
-// `throughputMbps >= 0.6 * capacityMbps`) — a fleet that has just started
-// ticking should look healthy, not born half-degraded. That holds for
-// every Tick a Degradation Episode doesn't claim; the same fixed, low
-// per-Tick probability that starts one for an established Link can also
-// land on a Link's very first Tick, in which case it is born already
-// walking the degraded target below — an accepted rarity, not a bug.
+// Mean-reversion targets. Chosen to sit clear of `deriveStatus`'s
+// `UP_SNR_DB` and `UP_THROUGHPUT_RATIO`, which own those thresholds, so a
+// freshly-created Link's first Sample reads comfortably `up` — a fleet that
+// has just started ticking should look healthy, not born half-degraded.
+// That holds for every Tick a Degradation Episode doesn't claim; the same
+// fixed, low per-Tick probability that starts one for an established Link
+// can also land on a Link's very first Tick, in which case it is born
+// already walking the degraded target below — an accepted rarity, not a bug.
 const RSSI_TARGET_DBM = -55;
 // This class of point-to-point link typically reports -30 to -90 dBm; the
 // floor here sits 5 dB below that, wide enough to cover a genuinely faulty

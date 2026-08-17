@@ -502,9 +502,6 @@ export class LinkDetailPage {
             this.loadedLink.set(link);
             this.initialSample.set(latestSample);
           },
-          // Only a 404 means the Link is gone. Everything else — offline, a
-          // timeout, a 500, a proxy's 502 — is the Server not answering, and
-          // the two get different words.
           error: (cause: unknown) => {
             if (isNotFoundError(cause)) {
               this.notFound.set(true);
