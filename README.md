@@ -194,11 +194,20 @@ production build drops the dev build's unminified code and Angular's extra
 dev-mode checks, so production should cost at most this, not more.
 
 **Bundle size**, the other number of this kind: `nx build console
---configuration=production` reports an initial bundle of **125.65 kB raw,
-36.77 kB estimated transfer** (gzip) — well inside the 650 kB budget. The
-triage panel accounts for most of the drop from an earlier build of this
-Console: it is no longer part of this bundle, or of any chunk this build
-produces, at any size — see [The Assistant remote](#the-assistant-remote).
+--configuration=production` reports an initial bundle of **126.53 kB raw**
+— well inside the 650 kB budget on its own. That number is not the whole
+picture since Module Federation was introduced, though: `tools/verify-bundle-budget.mjs`
+measures the **true first-load payload at 1,190 kB raw**, which is over the
+1 MB error budget. The gap is Native Federation's shared-dependency
+bundles (`@angular/core`, `@angular/router`, `zod`, and the two workspace
+libraries declared `sharedMappings`) — every one of them is fetched before
+the app can render, but none of them is an initial `<script>` tag Angular's
+own bundler emits, so its budget check cannot see them. See
+[The Assistant remote](#the-assistant-remote) for why those specific
+libraries have to be shared, and the script's own header comment for the
+measurement in full. The triage panel itself really is gone from this
+build at any size — that part of the earlier, smaller-looking number was
+correct — it just wasn't the only thing that changed.
 
 ### Where things live
 

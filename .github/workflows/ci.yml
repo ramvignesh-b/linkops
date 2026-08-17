@@ -71,6 +71,21 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # Angular's own budgets (console's `esbuild` target) only see
+      # main/polyfills/styles; this adds Native Federation's shared-
+      # dependency bundles, fetched before first render too but outside
+      # that check's visibility — see tools/verify-bundle-budget.mjs and
+      # ADR-0014.
+      #
+      # `continue-on-error: true` because the true total is currently over
+      # the 1000 kB error budget (~1190 kB) — a real regression this check
+      # exists to surface, not one this PR fixes. Blocking on it here would
+      # make every PR red until that's remediated. Remove this line once
+      # the bundle is back under budget and this can gate for real.
+      - name: Verify bundle budget
+        continue-on-error: true
+        run: node tools/verify-bundle-budget.mjs dist/apps/console/browser 650 1000
+
       - name: Report Bundle Size & Sticky PR Comment
         if: always()
         env:
@@ -78,61 +93,42 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           DIST="dist/apps/console/browser"
-          INDEX="$DIST/index.html"
 
           if [ -d "$DIST" ]; then
+            REPORT_JSON=$(node tools/verify-bundle-budget.mjs "$DIST" 650 1000 --json)
             REPORT_FILE=$(mktemp)
+
+            STATUS=$(echo "$REPORT_JSON" | jq -r '.status')
+            WARN_KB=$(echo "$REPORT_JSON" | jq -r '.warnKb')
+            ERROR_KB=$(echo "$REPORT_JSON" | jq -r '.errorKb')
+            TRUE_KB=$(echo "$REPORT_JSON" | jq -r '(.trueInitialBytes / 1000) | round')
+
+            case "$STATUS" in
+              error) BADGE="❌ Fail — over the ${ERROR_KB} kB error budget" ;;
+              warn)  BADGE="⚠️ Warn — over the ${WARN_KB} kB warn budget" ;;
+              *)     BADGE="✅ Pass — within the ${WARN_KB} kB warn budget" ;;
+            esac
+
             {
               echo "### 📦 Console Bundle Observability"
               echo "<!-- console-bundle-report -->"
               echo ""
-              echo "#### 🚀 Initial Bundle (Render-Blocking — Budget: 650 kB warn / 1 MB error)"
-              echo "| Asset | Type | Raw Size | Gzip Transfer |"
-              echo "| :--- | :--- | :--- | :--- |"
-
-              INITIAL_RAW_BYTES=0
-              INITIAL_GZIP_BYTES=0
-
-              WARNING_KB=650.00
-
-              for f in "$DIST"/*.js "$DIST"/*.css; do
-                [ -f "$f" ] || continue
-                BASE=$(basename "$f")
-                if grep -q "$BASE" "$INDEX"; then
-                  RAW_BYTES=$(stat -c%s "$f")
-                  RAW_KB=$(awk "BEGIN {printf \"%.2f kB\", $RAW_BYTES/1024}")
-                  GZIP_BYTES=$(gzip -c "$f" | wc -c)
-                  GZIP_KB=$(awk "BEGIN {printf \"%.2f kB\", $GZIP_BYTES/1024}")
-
-                  INITIAL_RAW_BYTES=$((INITIAL_RAW_BYTES + RAW_BYTES))
-                  INITIAL_GZIP_BYTES=$((INITIAL_GZIP_BYTES + GZIP_BYTES))
-
-                  echo "| \`$BASE\` | Initial | $RAW_KB | $GZIP_KB |"
-                fi
-              done
-
-              TOTAL_INITIAL_RAW_KB=$(awk "BEGIN {printf \"%.2f kB\", $INITIAL_RAW_BYTES/1024}")
-              TOTAL_INITIAL_GZIP_KB=$(awk "BEGIN {printf \"%.2f kB\", $INITIAL_GZIP_BYTES/1024}")
-
-              echo "| **Initial Total** | **All Initial** | **$TOTAL_INITIAL_RAW_KB** | **$TOTAL_INITIAL_GZIP_KB** |"
+              echo "#### 🚀 True First-Load Payload (Budget: ${WARN_KB} kB warn / ${ERROR_KB} kB error)"
               echo ""
-              echo "**Budget Status:** $TOTAL_INITIAL_RAW_KB / $WARNING_KB kB Warning (✅ Pass — Headroom: $(awk "BEGIN {printf \"%.2f kB\", 650 - $INITIAL_RAW_BYTES/1024}"))"
-
+              echo "Angular's own bundler only tracks \`main\`/\`polyfills\`/\`styles\` as \"initial\" — it has no visibility into Native Federation's shared-dependency bundles, even though every one of them is fetched before first render. This total includes both."
+              echo ""
+              echo "| Asset | Type | Raw Size |"
+              echo "| :--- | :--- | ---: |"
+              echo "$REPORT_JSON" | jq -r '.initial[] | "| `\(.file)` | Initial | \(((.bytes/1000)*100|round)/100) kB |"'
+              echo "$REPORT_JSON" | jq -r '.shared[] | "| `\(.file)` | Federation shared dep | \(((.bytes/1000)*100|round)/100) kB |"'
+              echo "| **True first-load total** | **Initial + shared deps** | **${TRUE_KB} kB** |"
+              echo ""
+              echo "**Budget status:** ${BADGE}"
               echo ""
               echo "#### 💤 Lazy Chunks (Loaded on Demand)"
-              echo "| Asset | Type | Raw Size | Gzip Transfer |"
-              echo "| :--- | :--- | :--- | :--- |"
-
-              for f in "$DIST"/chunk-*.js; do
-                [ -f "$f" ] || continue
-                BASE=$(basename "$f")
-                if ! grep -q "$BASE" "$INDEX"; then
-                  RAW_KB=$(ls -lh "$f" | awk '{print $5}')
-                  GZIP_KB=$(gzip -c "$f" | wc -c | awk '{printf "%.2f kB", $1/1024}')
-                  echo "| \`$BASE\` | Lazy Route | $RAW_KB | $GZIP_KB |"
-                fi
-              done
-
+              echo "| Asset | Type | Raw Size |"
+              echo "| :--- | :--- | ---: |"
+              echo "$REPORT_JSON" | jq -r '.lazy[] | "| `\(.file)` | Lazy Route | \(((.bytes/1000)*100|round)/100) kB |"'
               echo ""
               echo "#### 🔤 Self-Hosted Media (Fonts / Assets)"
               echo "| Asset Category | On-Disk Size | Transferred Subset |"

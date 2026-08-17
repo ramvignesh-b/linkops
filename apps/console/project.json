@@ -43,6 +43,15 @@
         "command": "tsc -p apps/console/tsconfig.app.json --noEmit"
       }
     },
+    "verify-bundle-budget": {
+      "// note": "650/1000 kB must match the esbuild target's own budgets below — that check only sees Angular's own initial output; this one adds Native Federation's shared-dependency bundles, fetched before first render too but outside that check's visibility. See tools/verify-bundle-budget.mjs.",
+      "cache": true,
+      "dependsOn": ["build"],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/verify-bundle-budget.mjs dist/apps/console/browser 650 1000"
+      }
+    },
     "test": {
       "executor": "@angular/build:unit-test",
       "options": {

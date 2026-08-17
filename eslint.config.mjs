@@ -137,4 +137,13 @@ export default [
       '@typescript-eslint/consistent-type-imports': 'off',
     },
   },
+  {
+    // A CLI script, not application code: printing to stdout is its actual
+    // job (a human's terminal, or CI piping JSON through `jq`), not a
+    // stray debug log the `warn`/`error`-only rule above exists to catch.
+    files: ['tools/**/*.mjs'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
 ];

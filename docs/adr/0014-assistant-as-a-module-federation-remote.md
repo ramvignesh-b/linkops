@@ -90,10 +90,34 @@ is answerable to.
 ## Consequences
 
 - `apps/console`'s production build carries no trace of the Assistant —
-  not in the initial bundle, not in a lazy chunk of its own. The initial
-  bundle drops from 616.33 kB to 125.65 kB raw as a result — see
-  [the README's bundle-size note](../../README.md#what-the-console-does-with-a-tick)
-  — and the triage panel's code ships only from `apps/assistant`'s own build.
+  not in the initial bundle, not in a lazy chunk of its own — and the
+  triage panel's code ships only from `apps/assistant`'s own build.
+  Angular's own reported initial bundle drops from 616.33 kB to 126.53 kB
+  raw as a result, but that comparison is not the whole picture — see the
+  next bullet.
+- **Angular's own bundle budget cannot see Native Federation's shared-
+  dependency bundles, and the true first-load payload is over budget.**
+  `main.js`/`polyfills.js`/`styles.css` are the only files Angular's
+  bundler emits as an initial `<script>` tag, so they are the only ones
+  `esbuild`'s `budgets` config checks. The shared-dependency bundles this
+  same PR's `sharedMappings` and `shareAll` config produce
+  (`_angular_core.<hash>.js`, `zod.<hash>.js`, and the rest) are built by a
+  separate step and are invisible to that check — but they are not
+  optional: a real browser session confirms every one of them is fetched
+  before the Fleet route ever renders. Measured together
+  (`tools/verify-bundle-budget.mjs`), the true total is **1,190 kB raw**,
+  over the 1 MB error budget the `esbuild` target's own config states.
+  This was caught by manually reconciling a CI-posted bundle report against
+  the actual `dist/` output after a question about that report's accuracy,
+  not by any check that existed before it — the CI step that posts it
+  (`.github/workflows/ci.yml`) previously only summed files referenced by
+  name in `index.html`, which never includes these, so it had silently
+  been reporting an incomplete number since the shared-dependency bundles
+  started existing. Both the CI step and `tools/verify-bundle-budget.mjs`
+  are fixed to report the true total as of this PR; the CI gate is
+  `continue-on-error: true` until the actual regression is remediated,
+  since failing on it now would make every PR red for a problem this PR
+  surfaced but did not yet fix.
 - `console/data-access` and `libs/shared/domain` are declared shared
   singletons in both `federation.config.mjs` files. This is not an
   optimisation: `AssistantInvalidPayloadError` is defined in
