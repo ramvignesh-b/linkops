@@ -2,7 +2,6 @@ import {
   a2uiEnvelopeSchema,
   type A2uiCreateSurface,
 } from '@linkops/shared/a2ui-protocol';
-import { DEFAULT_GEMINI_MODEL } from '@linkops/server/config';
 import type { Clock } from '@linkops/server/telemetry';
 import {
   fakeLinkRepository,
@@ -23,7 +22,7 @@ const { generateContent, GoogleGenAIMock } = vi.hoisted(() => {
 
 vi.mock('@google/genai', () => ({ GoogleGenAI: GoogleGenAIMock }));
 
-const { GeminiAgent } = await import('./gemini-agent');
+const { GeminiAgent, DEFAULT_GEMINI_MODEL } = await import('./gemini-agent');
 
 const fixedClock: Clock = { now: () => new Date('2026-01-01T00:00:05.000Z') };
 

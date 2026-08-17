@@ -1,10 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ENVIRONMENT } from './environment.token';
-import {
-  DEFAULT_GEMINI_MODEL,
-  type AssistantProvider,
-  type Environment,
-} from './environment.schema';
+import type { AssistantProvider, Environment } from './environment.schema';
 
 /**
  * The typed face of this application's configuration — everything outside
@@ -32,13 +28,8 @@ export class ServerConfigService {
     return this.environment.ASSISTANT_PROVIDER_KEY;
   }
 
-  /** `undefined` whenever no model is configured and provider is not `'gemini'`. */
+  /** The configured AI model identifier, or `undefined` if unset. */
   get assistantModel(): string | undefined {
-    if (this.environment.ASSISTANT_MODEL) {
-      return this.environment.ASSISTANT_MODEL;
-    }
-    return this.environment.ASSISTANT_PROVIDER === 'gemini'
-      ? DEFAULT_GEMINI_MODEL
-      : undefined;
+    return this.environment.ASSISTANT_MODEL;
   }
 }
