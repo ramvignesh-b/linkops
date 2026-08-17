@@ -2,6 +2,7 @@ import {
   HttpTestingController,
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
+import type { Provider } from '@angular/core';
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import {
@@ -9,6 +10,7 @@ import {
   STREAM_REOPEN_DELAY_MS,
   type EventSourceLike,
 } from '@linkops/console/data-access';
+import { AssistantPanel } from '@linkops/console/feature-assistant';
 import type {
   FleetSummary,
   Link,
@@ -89,14 +91,32 @@ export const nextMacrotask = () =>
  * `path` is the initial navigation, `/links` by default; a test asserting on
  * a query string passes it explicitly (`/links?status=degraded`) so the
  * filter and sort are live from the first render rather than applied after.
+ *
+ * `extraProviders` is appended after every default above, so a test can
+ * override one of them — `ASSISTANT_REMOTE_LOADER`, most often, to control
+ * exactly when the Assistant remote's promise resolves rather than the
+ * default that settles it immediately.
  */
-export async function bootConsole(path = '/links'): Promise<{
+export async function bootConsole(
+  path = '/links',
+  extraProviders: Provider[] = [],
+): Promise<{
   fixture: ComponentFixture<App>;
   http: HttpTestingController;
   router: Router;
   stream: () => FakeEventSource;
 }> {
   const sources: FakeEventSource[] = [];
+
+  // Dynamic, not static: `console/feature-fleet` — where `ASSISTANT_REMOTE_LOADER`
+  // now lives, alongside `AssistantWrapper`, the one thing that injects it —
+  // is lazy-loaded from `app.routes.ts`, and `@nx/enforce-module-boundaries`
+  // bans this project from also statically importing a library it
+  // lazy-loads elsewhere. A dynamic `import()` is exactly the exemption the
+  // rule makes for this.
+  const { ASSISTANT_REMOTE_LOADER } = await import(
+    '@linkops/console/feature-fleet'
+  );
 
   TestBed.configureTestingModule({
     providers: [
@@ -115,6 +135,18 @@ export async function bootConsole(path = '/links'): Promise<{
           return source;
         },
       },
+      // Stands in for `loadRemoteModule` — the one step a test environment
+      // cannot perform, fetching the Assistant remote's code over the
+      // network. Resolves to the real `AssistantPanel`, so everything this
+      // composes it with — `AssistantSession`, `AssistantClient`, the A2UI
+      // renderer — is exactly what ships, `HttpTestingController` standing
+      // in for the one HTTP call it makes the same way it already does for
+      // the rest of this Console.
+      {
+        provide: ASSISTANT_REMOTE_LOADER,
+        useValue: () => Promise.resolve(AssistantPanel),
+      },
+      ...extraProviders,
     ],
   });
 
@@ -320,6 +352,9 @@ function assistantScreen(root: HTMLElement) {
       ),
     assistantFailureText: (): string =>
       text(root.querySelector('.assistant-failure')),
+    /** The spinner `AssistantWrapper` shows while the remote's component is still loading. */
+    assistantLoadingText: (): string =>
+      text(root.querySelector('.assistant-loading')),
     setAssistantSelect: (name: string, value: string): void => {
       const element = root.querySelector<HTMLSelectElement>(
         `select[name="${name}"]`,

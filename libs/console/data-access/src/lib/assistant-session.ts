@@ -1,4 +1,5 @@
-import { inject, Injectable, signal } from '@angular/core';
+import { DestroyRef, inject, Injectable, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { Observable, Subscription } from 'rxjs';
 import type {
   A2uiActionRequest,
@@ -12,18 +13,19 @@ import type { AssistantFailure } from './console-failure';
 
 /**
  * The triage panel's state: what it asked for, what came back, and whether
- * that worked. `FleetPage` injects this and passes its signals down — the
- * panel's composition is the routed page's job, but tracking its own state is
- * not, which is what keeps the page inside its complexity budget as the
- * panel grows.
+ * that worked. The panel's own composition root injects this and reads its
+ * signals down — the panel's composition is that component's job, but
+ * tracking its own state is not, which is what keeps it inside its
+ * complexity budget as the panel grows.
  *
- * Not `providedIn: 'root'`: a session belongs to the one route that composes
- * a panel from it, provided in that route's component `providers`, the same
- * way `LinkHistory` is scoped to the detail route rather than the app.
+ * Not `providedIn: 'root'`: a session belongs to the one component that
+ * composes a panel from it, provided in that component's `providers`, the
+ * same way `LinkHistory` is scoped to the detail route rather than the app.
  */
 @Injectable()
 export class AssistantSession {
   private readonly client = inject(AssistantClient);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly surface = signal<A2uiCreateSurface | null>(null);
   readonly pending = signal(false);
@@ -31,10 +33,13 @@ export class AssistantSession {
 
   /**
    * The request in flight, if any — unsubscribed the moment a new one
-   * starts. Without this, a reply arrives whenever it arrives: a close and a
-   * quick reopen puts two requests in flight, and if the first (now stale)
-   * one resolves after the second, it would silently overwrite the answer to
-   * the question the operator actually asked.
+   * starts, or the panel closes, whichever comes first. Without the former,
+   * a reply arrives whenever it arrives: a close and a quick reopen puts two
+   * requests in flight, and if the first (now stale) one resolves after the
+   * second, it would silently overwrite the answer to the question the
+   * operator actually asked. Without the latter, closing the panel — which
+   * destroys this session along with it — would leave the request itself
+   * still running, its answer arriving nowhere.
    */
   private inFlight: Subscription | undefined;
 
@@ -65,7 +70,7 @@ export class AssistantSession {
     this.pending.set(true);
     this.failure.set(null);
 
-    this.inFlight = reply.subscribe({
+    this.inFlight = reply.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (surface) => {
         this.pending.set(false);
         this.surface.set(surface);

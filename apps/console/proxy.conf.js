@@ -5,4 +5,9 @@ module.exports = {
     target: `http://localhost:${apiPort}`,
     secure: false,
   },
+  '/assistant': {
+    target: 'http://localhost:4201',
+    pathRewrite: { '^/assistant': '' },
+    secure: false,
+  },
 };

@@ -4,9 +4,10 @@
   "private": true,
   "packageManager": "pnpm@11.21.0",
   "scripts": {
-    "start": "nx run-many -t serve -p api console",
+    "start": "nx run-many -t serve -p api console assistant",
     "serve:api": "nx serve api",
     "serve:console": "nx serve console",
+    "serve:assistant": "nx serve assistant",
     "build": "nx run-many -t build",
     "test": "nx run-many -t test",
     "lint": "nx run-many -t lint",
@@ -39,6 +40,7 @@
     "@nx/webpack": "23.1.1",
     "@oxc-project/runtime": "^0.115.0",
     "@schematics/angular": "~22.0.4",
+    "@softarc/native-federation-orchestrator": "^4.2.2",
     "@swc/helpers": "~0.5.18",
     "@types/node": "^24.13.3",
     "@types/supertest": "^7.2.1",
@@ -52,6 +54,7 @@
     "jsdom": "^27.1.0",
     "lint-staged": "^17.3.0",
     "nx": "23.1.1",
+    "playwright-core": "^1.62.1",
     "prettier": "~3.6.2",
     "supertest": "^7.2.2",
     "typescript": "~6.0.3",
@@ -63,6 +66,7 @@
     "webpack-dev-server": "^5.2.1"
   },
   "dependencies": {
+    "@angular-architects/native-federation": "22.0.6",
     "@angular/common": "~22.0.4",
     "@angular/compiler": "~22.0.4",
     "@angular/core": "~22.0.4",
@@ -78,6 +82,7 @@
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/swagger": "^11.4.6",
     "axios": "^1.6.0",
+    "es-module-shims": "^2.8.0",
     "nestjs-zod": "^5.5.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.0",

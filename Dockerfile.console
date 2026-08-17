@@ -20,7 +20,7 @@ COPY nx.json tsconfig.base.json ./
 COPY apps/ ./apps/
 COPY libs/ ./libs/
 
-RUN pnpm nx build console
+RUN pnpm nx run-many -t build -p console assistant
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 3: Console Nginx Runtime
@@ -33,6 +33,7 @@ COPY deploy/nginx/default.conf.template /etc/nginx/templates/default.conf.templa
 COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
 
 COPY --from=builder /app/dist/apps/console/browser /usr/share/nginx/html
+COPY --from=builder /app/dist/apps/assistant/browser /usr/share/nginx/html/assistant
 
 EXPOSE 80
 

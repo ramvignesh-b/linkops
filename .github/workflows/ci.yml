@@ -52,6 +52,23 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Locate the Playwright browser version
+        id: playwright-version
+        run: echo "version=$(node -e "console.log(require('playwright-core/package.json').version)")" >> "$GITHUB_OUTPUT"
+
+      # The Console's own build already exercises Playwright's browser
+      # download once; this cache is what keeps every later CI run from
+      # doing it again just to measure a bundle.
+      - uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright's Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
       # Hooks are bypassable with --no-verify, so the whole history is checked
       # here rather than trusting that every commit passed one on the way in.
       - name: Commit messages
@@ -71,6 +88,19 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # Angular's own budgets (console's `esbuild` target) only see
+      # main/polyfills/styles, and lumping Native Federation's shared-
+      # dependency bundles into the same one number as this app's own code
+      # was its own mistake — that cost is one-time, cacheable, and not
+      # something a Console feature change can shrink. This gates only
+      # this app's own code (main/polyfills/styles/its own route chunks),
+      # measured for real against a real browser landing on `/`, and
+      # reports the shared-dependency cost separately rather than folding
+      # it in. See tools/verify-bundle-budget.mjs's header comment and
+      # ADR-0015's "Consequences" for the two wrong attempts this replaced.
+      - name: Verify bundle budget
+        run: node tools/verify-bundle-budget.mjs dist/apps/console/browser 500 1000
+
       - name: Report Bundle Size & Sticky PR Comment
         if: always()
         env:
@@ -78,69 +108,58 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           DIST="dist/apps/console/browser"
-          INDEX="$DIST/index.html"
 
           if [ -d "$DIST" ]; then
+            REPORT_JSON=$(node tools/verify-bundle-budget.mjs "$DIST" 500 1000 --json)
             REPORT_FILE=$(mktemp)
+
+            STATUS=$(echo "$REPORT_JSON" | jq -r '.status')
+            WARN_KB=$(echo "$REPORT_JSON" | jq -r '.warnKb')
+            ERROR_KB=$(echo "$REPORT_JSON" | jq -r '.errorKb')
+            APP_RAW_KB=$(echo "$REPORT_JSON" | jq -r '(.appRawBytes / 1000) | round')
+            APP_GZIP_KB=$(echo "$REPORT_JSON" | jq -r '(.appTransferBytes / 1000) | round')
+            SHARED_RAW_KB=$(echo "$REPORT_JSON" | jq -r '(.sharedRawBytes / 1000) | round')
+            SHARED_GZIP_KB=$(echo "$REPORT_JSON" | jq -r '(.sharedTransferBytes / 1000) | round')
+            TOTAL_RAW_KB=$(echo "$REPORT_JSON" | jq -r '(.totalRawBytes / 1000) | round')
+            TOTAL_GZIP_KB=$(echo "$REPORT_JSON" | jq -r '(.totalTransferBytes / 1000) | round')
+
+            case "$STATUS" in
+              error) BADGE="❌ Fail — app code over the ${ERROR_KB} kB error budget" ;;
+              warn)  BADGE="⚠️ Warn — app code over the ${WARN_KB} kB warn budget" ;;
+              *)     BADGE="✅ Pass — app code within the ${WARN_KB} kB warn budget" ;;
+            esac
+
+            row() {
+              # $1 = bucket ("app"/"shared"), $2 = row label ("App"/"Shared")
+              echo "$REPORT_JSON" | jq -r --arg bucket "$1" --arg label "$2" \
+                '.entries | map(select(.bucket == $bucket)) | sort_by(-.rawBytes)[] | "| " + $label + " | `" + .file + "` | " + (((.rawBytes/1000*100|round)/100)|tostring) + " kB | " + (((.transferBytes/1000*100|round)/100)|tostring) + " kB |"'
+            }
+
             {
               echo "### 📦 Console Bundle Observability"
               echo "<!-- console-bundle-report -->"
               echo ""
-              echo "#### 🚀 Initial Bundle (Render-Blocking — Budget: 650 kB warn / 1 MB error)"
-              echo "| Asset | Type | Raw Size | Gzip Transfer |"
-              echo "| :--- | :--- | :--- | :--- |"
-
-              INITIAL_RAW_BYTES=0
-              INITIAL_GZIP_BYTES=0
-
-              WARNING_KB=650.00
-
-              for f in "$DIST"/*.js "$DIST"/*.css; do
-                [ -f "$f" ] || continue
-                BASE=$(basename "$f")
-                if grep -q "$BASE" "$INDEX"; then
-                  RAW_BYTES=$(stat -c%s "$f")
-                  RAW_KB=$(awk "BEGIN {printf \"%.2f kB\", $RAW_BYTES/1024}")
-                  GZIP_BYTES=$(gzip -c "$f" | wc -c)
-                  GZIP_KB=$(awk "BEGIN {printf \"%.2f kB\", $GZIP_BYTES/1024}")
-
-                  INITIAL_RAW_BYTES=$((INITIAL_RAW_BYTES + RAW_BYTES))
-                  INITIAL_GZIP_BYTES=$((INITIAL_GZIP_BYTES + GZIP_BYTES))
-
-                  echo "| \`$BASE\` | Initial | $RAW_KB | $GZIP_KB |"
-                fi
-              done
-
-              TOTAL_INITIAL_RAW_KB=$(awk "BEGIN {printf \"%.2f kB\", $INITIAL_RAW_BYTES/1024}")
-              TOTAL_INITIAL_GZIP_KB=$(awk "BEGIN {printf \"%.2f kB\", $INITIAL_GZIP_BYTES/1024}")
-
-              echo "| **Initial Total** | **All Initial** | **$TOTAL_INITIAL_RAW_KB** | **$TOTAL_INITIAL_GZIP_KB** |"
+              echo "Measured, not guessed from filenames: a real headless browser, served the real production build (gzip included), landing on \`/\` — every byte every response actually carried before the Fleet table rendered."
               echo ""
-              echo "**Budget Status:** $TOTAL_INITIAL_RAW_KB / $WARNING_KB kB Warning (✅ Pass — Headroom: $(awk "BEGIN {printf \"%.2f kB\", 650 - $INITIAL_RAW_BYTES/1024}"))"
-
+              echo "#### 🚀 App code (gated: ${WARN_KB} kB warn / ${ERROR_KB} kB error, raw)"
+              echo "This app's own code — \`main\`/\`polyfills\`/\`styles\`/its own route chunks. What a Console change can actually move."
               echo ""
-              echo "#### 💤 Lazy Chunks (Loaded on Demand)"
-              echo "| Asset | Type | Raw Size | Gzip Transfer |"
-              echo "| :--- | :--- | :--- | :--- |"
-
-              for f in "$DIST"/chunk-*.js; do
-                [ -f "$f" ] || continue
-                BASE=$(basename "$f")
-                if ! grep -q "$BASE" "$INDEX"; then
-                  RAW_KB=$(ls -lh "$f" | awk '{print $5}')
-                  GZIP_KB=$(gzip -c "$f" | wc -c | awk '{printf "%.2f kB", $1/1024}')
-                  echo "| \`$BASE\` | Lazy Route | $RAW_KB | $GZIP_KB |"
-                fi
-              done
-
+              echo "| Type | Asset | Raw | Gzip |"
+              echo "| :--- | :--- | ---: | ---: |"
+              row app App
+              echo "| | **App code total** | **${APP_RAW_KB} kB** | **${APP_GZIP_KB} kB** |"
               echo ""
-              echo "#### 🔤 Self-Hosted Media (Fonts / Assets)"
-              echo "| Asset Category | On-Disk Size | Transferred Subset |"
-              echo "| :--- | :--- | :--- |"
-              if [ -d "$DIST/media" ]; then
-                echo "| Fonts (\`media/*.woff2\`) | $(du -sh "$DIST/media" | awk '{print $1}') | ~62 kB (Latin subsets on first load) |"
-              fi
-              echo "| Favicon & HTML | $(ls -lh "$DIST/favicon.ico" "$DIST/index.html" 2>/dev/null | awk '{sum+=$5} END {print sum " kB"}') | Cached on load |"
+              echo "**Budget status:** ${BADGE}"
+              echo ""
+              echo "#### 🧱 Shared infrastructure (reported, not gated)"
+              echo "Native Federation's shared-dependency bundles — one-time, content-hashed, cacheable across every visit and every micro-frontend on this origin. Not something this app's own code controls; see [ADR-0015](../../blob/main/docs/adr/0015-assistant-as-a-module-federation-remote.md)."
+              echo ""
+              echo "| Type | Asset | Raw | Gzip |"
+              echo "| :--- | :--- | ---: | ---: |"
+              row shared Shared
+              echo "| | **Shared infrastructure total** | **${SHARED_RAW_KB} kB** | **${SHARED_GZIP_KB} kB** |"
+              echo ""
+              echo "**Total first-load (informational):** ${TOTAL_RAW_KB} kB raw / ${TOTAL_GZIP_KB} kB gzip"
             } > "$REPORT_FILE"
 
             cat "$REPORT_FILE" >> $GITHUB_STEP_SUMMARY

@@ -24,8 +24,8 @@ COPY nx.json tsconfig.base.json ./
 COPY apps/ ./apps/
 COPY libs/ ./libs/
 
-# Build both api and console applications
-RUN pnpm nx run-many -t build -p api console
+# Build all workspace applications (api, console, assistant)
+RUN pnpm nx run-many -t build
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 3: Production API Service (NestJS)
@@ -66,7 +66,7 @@ HEALTHCHECK --interval=5s --timeout=5s --start-period=10s --retries=5 \
 CMD ["node", "main.js"]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Stage 4: Production Console Service (Angular SPA + Nginx Reverse Proxy)
+# Stage 4: Production Console Service (Angular Host + Module Federation Remote + Nginx)
 # ─────────────────────────────────────────────────────────────────────────────
 FROM nginx:alpine AS console
 ENV API_URL=http://api:3000/api/
@@ -78,8 +78,11 @@ COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
 
-# Copy built Angular static bundle
+# Copy built Angular Host static bundle
 COPY --from=builder /app/dist/apps/console/browser /usr/share/nginx/html
+
+# Copy built Assistant Module Federation Remote bundle
+COPY --from=builder /app/dist/apps/assistant/browser /usr/share/nginx/html/assistant
 
 EXPOSE 80
 

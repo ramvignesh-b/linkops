@@ -41,5 +41,5 @@ this document also protects still holds, just relocated: `AssistantSession`
 is now provided by the panel's own composition root, `AssistantPanel`,
 which is legally allowed to inject it for the same reason `FleetPage` was
 before — it is the one component on its own side of the federation
-boundary. See [ADR-0014](../adr/0014-assistant-as-a-module-federation-remote.md)
+boundary. See [ADR-0015](../adr/0015-assistant-as-a-module-federation-remote.md)
 for the full decision.
