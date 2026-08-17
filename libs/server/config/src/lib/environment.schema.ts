@@ -25,20 +25,29 @@ const booleanFlagSchema = z
 
 /**
  * The four variables this application's boot is coherent or incoherent
- * over. Every one is optional by presence — a fully empty environment
- * parses — because "fail fast, naming what's wrong" and "start with no
- * credentials" can only both hold if the schema validates coherence, not
- * presence. `ASSISTANT_PROVIDER_KEY`'s conditional requirement, enforced
- * below, is where that coherence actually lives.
+ * over, before the cross-field coherence rule below is layered on. Exported
+ * on its own — rather than only as `environmentSchema`'s hidden inner
+ * schema — so `loadEnvironment`'s near-miss check can read
+ * `environmentShapeSchema.shape` for the variable names this schema
+ * actually knows, instead of hand-maintaining a second list that could
+ * drift from this one.
  */
-export const environmentSchema = z
-  .object({
-    PORT: z.coerce.number().int().positive().default(3000),
-    SWAGGER_UI_ENABLED: booleanFlagSchema,
-    ASSISTANT_PROVIDER: assistantProviderSchema.default('stub'),
-    ASSISTANT_PROVIDER_KEY: z.string().min(1).optional(),
-  })
-  .superRefine((value, ctx) => {
+export const environmentShapeSchema = z.object({
+  PORT: z.coerce.number().int().positive().default(3000),
+  SWAGGER_UI_ENABLED: booleanFlagSchema,
+  ASSISTANT_PROVIDER: assistantProviderSchema.default('stub'),
+  ASSISTANT_PROVIDER_KEY: z.string().min(1).optional(),
+});
+
+/**
+ * Every one of the four variables above is optional by presence — a fully
+ * empty environment parses — because "fail fast, naming what's wrong" and
+ * "start with no credentials" can only both hold if the schema validates
+ * coherence, not presence. `ASSISTANT_PROVIDER_KEY`'s conditional
+ * requirement, enforced below, is where that coherence actually lives.
+ */
+export const environmentSchema = environmentShapeSchema.superRefine(
+  (value, ctx) => {
     if (value.ASSISTANT_PROVIDER === 'model' && !value.ASSISTANT_PROVIDER_KEY) {
       ctx.addIssue({
         code: 'custom',
@@ -47,6 +56,7 @@ export const environmentSchema = z
           'ASSISTANT_PROVIDER_KEY is required when ASSISTANT_PROVIDER=model',
       });
     }
-  });
+  },
+);
 
 export type Environment = z.infer<typeof environmentSchema>;
