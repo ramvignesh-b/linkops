@@ -1,17 +1,11 @@
-import { environmentSchema, type Environment } from './environment.schema';
+import {
+  environmentSchema,
+  environmentShapeSchema,
+  type Environment,
+} from './environment.schema';
 
 /** Thrown by `loadEnvironment`; never carries a variable's value, only its name. */
 export class EnvironmentValidationError extends Error {}
-
-/**
- * Every full env var name this schema recognises. Used only to build the
- * near-miss check below — the schema itself never needs this list, because
- * a zod object silently ignores keys it wasn't told about.
- */
-const KNOWN_ASSISTANT_VARIABLES = new Set([
-  'ASSISTANT_PROVIDER',
-  'ASSISTANT_PROVIDER_KEY',
-]);
 
 /**
  * The prefix a near-miss variable name is caught by. Scoped to the
@@ -20,6 +14,19 @@ const KNOWN_ASSISTANT_VARIABLES = new Set([
  * typo'd against, so there is no near-miss failure mode for them to guard.
  */
 const ASSISTANT_PREFIX = 'ASSISTANT_';
+
+/**
+ * Every full `ASSISTANT_`-prefixed env var name this schema recognises,
+ * read off `environmentShapeSchema` itself rather than hand-maintained here
+ * — a field added to or removed from the schema changes this set with no
+ * second edit, so the near-miss check below can never drift from what the
+ * schema actually reads.
+ */
+const KNOWN_ASSISTANT_VARIABLES = new Set(
+  Object.keys(environmentShapeSchema.shape).filter((key) =>
+    key.startsWith(ASSISTANT_PREFIX),
+  ),
+);
 
 /**
  * A var that looks like it means to configure the Assistant but names
@@ -50,9 +57,15 @@ function describeIssues(
  * while `ASSISTANT_PROVIDER=model`, and an `ASSISTANT_`-prefixed variable
  * this schema does not read at all.
  *
- * Matches the shape `ConfigModule.forRoot({ validate })` expects — see
- * `ServerConfigModule` — so throwing here is what turns an incoherent
- * environment into a rejected `NestFactory.create()`.
+ * Called twice in practice, both throws landing the same way: once by
+ * `main.ts`, directly and synchronously before Nest is ever touched, and
+ * again inside `ServerConfigModule`'s `ENVIRONMENT` provider — a
+ * `useFactory`, not `ConfigModule.forRoot`'s `validate` option, because a
+ * `useFactory` runs at DI instantiation time (every `compile()`), where a
+ * `@Module()` decorator's own arguments evaluate once, the first time the
+ * module is imported, and never again. That second copy is what makes an
+ * incoherent environment fail `Test.createTestingModule(...).compile()` too,
+ * for any module built independently of `main.ts`.
  */
 export function loadEnvironment(
   rawEnv: Record<string, unknown> = process.env,
