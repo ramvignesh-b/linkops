@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { DEFAULT_GEMINI_MODEL } from './environment.schema';
 import { ServerConfigModule } from './server-config.module';
 import { ServerConfigService } from './server-config.service';
 
@@ -53,7 +54,7 @@ describe('ServerConfigModule', () => {
 
     const config = moduleRef.get(ServerConfigService);
 
-    expect(config.assistantModel).toBe('gemini-3.7-flash');
+    expect(config.assistantModel).toBe(DEFAULT_GEMINI_MODEL);
 
     await moduleRef.close();
   });

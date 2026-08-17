@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ENVIRONMENT } from './environment.token';
-import type { AssistantProvider, Environment } from './environment.schema';
+import {
+  DEFAULT_GEMINI_MODEL,
+  type AssistantProvider,
+  type Environment,
+} from './environment.schema';
 
 /**
  * The typed face of this application's configuration — everything outside
@@ -34,7 +38,7 @@ export class ServerConfigService {
       return this.environment.ASSISTANT_MODEL;
     }
     return this.environment.ASSISTANT_PROVIDER === 'gemini'
-      ? 'gemini-3.7-flash'
+      ? DEFAULT_GEMINI_MODEL
       : undefined;
   }
 }

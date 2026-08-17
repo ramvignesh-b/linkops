@@ -7,6 +7,7 @@ import {
   type A2uiRequest,
 } from '@linkops/shared/a2ui-protocol';
 import { withDerivedStatus, type Link } from '@linkops/shared/domain';
+import { DEFAULT_GEMINI_MODEL } from '@linkops/server/config';
 import type { LinkRepository } from '@linkops/server/links-data-access';
 import type { Clock, TelemetryPort } from '@linkops/server/telemetry';
 import type { A2uiAgent } from './a2ui-agent';
@@ -99,7 +100,7 @@ export class GeminiAgent implements A2uiAgent {
     private readonly telemetry: TelemetryPort,
     private readonly clock: Clock,
     apiKey: string,
-    private readonly model = 'gemini-3.7-flash',
+    private readonly model = DEFAULT_GEMINI_MODEL,
   ) {
     this.client = new GoogleGenAI({ apiKey });
   }
