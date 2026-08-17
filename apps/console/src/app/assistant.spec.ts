@@ -1,3 +1,5 @@
+import { AssistantPanel } from '@linkops/console/feature-assistant';
+import { ASSISTANT_REMOTE_LOADER } from '@linkops/console/data-access';
 import { A2UI_MAX_COMPONENTS } from '@linkops/shared/a2ui-protocol';
 import { toLinkId, type FleetSummary, type Link } from '@linkops/shared/domain';
 import {
@@ -211,6 +213,50 @@ describe('the triage panel', () => {
     await fixture.whenStable();
     expect(view.rowNames()).toEqual(['Alpha Ridge', 'Bravo Pass']);
     expect(view.status(BRAVO)).toBe('down · poor signal');
+
+    finish();
+  });
+
+  it('shows a loading spinner while the remote is fetched, and the panel once it resolves', async () => {
+    // The default `bootConsole` loader settles immediately, which is right
+    // for every other test here but leaves no pending moment to observe —
+    // this test supplies its own, held open until asserted against.
+    let resolveLoad!: (component: typeof AssistantPanel) => void;
+    const loading = new Promise<typeof AssistantPanel>((resolve) => {
+      resolveLoad = resolve;
+    });
+
+    const { fixture, http } = await bootConsole('/links', [
+      { provide: ASSISTANT_REMOTE_LOADER, useValue: () => loading },
+    ]);
+    answerFirstPaint(http, [alpha, bravo], summary());
+    await fixture.whenStable();
+
+    const view = screen(fixture);
+    view.askAssistant();
+    await fixture.whenStable();
+
+    // Still waiting on the remote: no request for the Assistant has been
+    // made yet, because the panel it would come from is not mounted.
+    expect(view.assistantLoadingText()).toContain('Loading the assistant');
+    http.expectNone('/api/agent/ui');
+
+    resolveLoad(AssistantPanel);
+    // `whenStable()` alone races the resolution above: called immediately,
+    // it can observe the fixture as already stable and return before
+    // `AssistantWrapper`'s own `.then()` — queued ahead of this one, since it
+    // was attached first — has run. Awaiting the same promise first forces
+    // that ordering, so `whenStable()` then has real, newly-scheduled work
+    // to wait for.
+    await loading;
+    await fixture.whenStable();
+
+    // The spinner is gone, and the panel underneath has already opened its
+    // own conversation.
+    expect(view.assistantLoadingText()).toBe('');
+    http.expectOne('/api/agent/ui').flush(triageEnvelope());
+    await fixture.whenStable();
+    expect(view.assistantCardTitle()).toBe('Triage');
 
     finish();
   });

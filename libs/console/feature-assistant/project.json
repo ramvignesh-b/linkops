@@ -1,0 +1,13 @@
+{
+  "name": "console-feature-assistant",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/console/feature-assistant/src",
+  "prefix": "lib",
+  "projectType": "library",
+  "tags": ["platform:console", "domain:assistant", "type:feature"],
+  "targets": {
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    }
+  }
+}

@@ -8,21 +8,14 @@ import {
   signal,
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { applyListQuery, FleetStore } from '@linkops/console/data-access';
 import {
-  AssistantSession,
-  applyListQuery,
-  FleetStore,
-  type AssistantFailure,
-} from '@linkops/console/data-access';
-import {
-  A2uiSurface,
   FleetFilterBar,
-  operatorMessageFor,
   SummaryFigureTile,
   StatusPill,
   ThroughputBar,
 } from '@linkops/console/ui';
-import type { A2uiActionRequest } from '@linkops/shared/a2ui-protocol';
+import { AssistantWrapper } from './assistant-wrapper';
 import {
   linkListQuerySchema,
   type Band,
@@ -69,18 +62,13 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
   selector: 'lib-fleet-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    A2uiSurface,
+    AssistantWrapper,
     FleetFilterBar,
     SummaryFigureTile,
     RouterLink,
     StatusPill,
     ThroughputBar,
   ],
-  // Scoped to this route, not root: the panel's conversation belongs to the
-  // Fleet view the way `LinkHistory` belongs to the detail route, and a
-  // fresh session is what makes "closing leaves the Fleet exactly as it was"
-  // trivially true — the store the panel never touches is a different object.
-  providers: [AssistantSession],
   template: `
     <section class="summary">
       <div class="summary-header">
@@ -194,26 +182,7 @@ const DEFAULT_QUERY: LinkListQuery = linkListQuerySchema.parse({});
         @if (assistantOpen()) {
           <section class="assistant-panel">
             @defer (on immediate) {
-              @if (assistant.failure(); as failure) {
-                <p class="assistant-failure">
-                  {{ assistantFailureMessage(failure) }}
-                </p>
-              }
-              @if (assistant.pending()) {
-                <p class="assistant-pending">Asking the assistant…</p>
-              }
-              <!--
-                Last, and independent of both: an Action keeps the Surface it
-                was raised from onscreen until the reply replaces it, so a
-                failed round trip shows the message above this offer rather
-                than instead of it.
-              -->
-              @if (assistant.surface(); as surface) {
-                <lib-a2ui-surface
-                  [surface]="surface"
-                  (action)="onAssistantAction($event)"
-                />
-              }
+              <lib-assistant-wrapper />
             } @placeholder {
               <p class="assistant-pending">Loading the assistant…</p>
             }
@@ -463,17 +432,20 @@ export class FleetPage {
   private readonly store = inject(FleetStore);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
-  protected readonly assistant = inject(AssistantSession);
 
   /**
    * Component state, not URL state: the panel is a transient conversation
    * with no shareable address, unlike the filter and sort above it. Gates
-   * the `@defer` block itself, so nothing inside — the renderer, its Data
-   * Model, the request it will send — is instantiated until an operator
-   * opens the panel for the first time; the trigger inside is `on immediate`
-   * because this `@if` is already the interaction gate. The initial bundle
-   * carries none of it either way: `console/ui`'s A2UI renderer is reachable
-   * only from this route's own lazy chunk, never from the eagerly-loaded one.
+   * the `@defer` block itself, so nothing inside — `AssistantWrapper`, the
+   * remote it fetches, the conversation it opens — is instantiated until an
+   * operator opens the panel for the first time; the trigger inside is `on
+   * immediate` because this `@if` is already the interaction gate, and
+   * closing has to unmount it outright — reopening starts `AssistantWrapper`
+   * fresh, which is what makes fetching the remote's component and opening a
+   * conversation happen again rather than being replayed from a cached view.
+   * The initial bundle carries none of it either way: the Assistant is a
+   * separately built and deployed remote, fetched only from this route's own
+   * lazy chunk, never from the eagerly-loaded one.
    */
   protected readonly assistantOpen = signal(false);
 
@@ -582,33 +554,14 @@ export class FleetPage {
     return this.latestSample().get(linkId)?.throughputMbps ?? null;
   }
 
-  /** Opens the panel and asks the Assistant exactly once. */
+  /** Opens the panel — mounting `AssistantWrapper` is what fetches the remote and asks it. */
   protected openAssistant(): void {
     this.assistantOpen.set(true);
-    this.assistant.open();
   }
 
   /** The Fleet is untouched by any of this — closing costs the operator nothing. */
   protected closeAssistant(): void {
     this.assistantOpen.set(false);
-  }
-
-  /**
-   * The renderer's one output. Sends the Action to the Assistant and renders
-   * the new Surface it answers with.
-   */
-  protected onAssistantAction(action: A2uiActionRequest): void {
-    this.assistant.act(action);
-  }
-
-  /** Exhaustive on `kind`, matching `operatorMessageFor`'s own guard on `code`. */
-  protected assistantFailureMessage(failure: AssistantFailure): string {
-    switch (failure.kind) {
-      case 'invalid-payload':
-        return operatorMessageFor(failure.code);
-      case 'transport':
-        return 'The assistant did not answer. Try again.';
-    }
   }
 
   /** One control changed: merged into the query string, which is the state. */

@@ -1,31 +1,31 @@
 {
-  "name": "console",
+  "name": "assistant",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "projectType": "application",
   "prefix": "app",
-  "sourceRoot": "apps/console/src",
-  "tags": ["platform:console", "domain:platform", "type:app"],
+  "sourceRoot": "apps/assistant/src",
+  "tags": ["platform:console", "domain:assistant", "type:app"],
   "targets": {
     "build": {
       "executor": "@angular-architects/native-federation:build",
+      "defaultConfiguration": "production",
       "options": {
         "cacheExternalArtifacts": true
       },
       "configurations": {
         "production": {
-          "target": "console:esbuild:production"
+          "target": "assistant:esbuild:production"
         },
         "development": {
-          "target": "console:esbuild:development",
+          "target": "assistant:esbuild:development",
           "dev": true
         }
-      },
-      "defaultConfiguration": "production"
+      }
     },
     "serve": {
       "executor": "@angular-architects/native-federation:build",
       "options": {
-        "target": "console:serve-original:development",
+        "target": "assistant:serve-original:development",
         "rebuildDelay": 500,
         "cacheExternalArtifacts": true,
         "dev": true,
@@ -40,22 +40,22 @@
       "cache": true,
       "executor": "nx:run-commands",
       "options": {
-        "command": "tsc -p apps/console/tsconfig.app.json --noEmit"
+        "command": "tsc -p apps/assistant/tsconfig.app.json --noEmit"
       }
     },
     "test": {
       "executor": "@angular/build:unit-test",
       "options": {
         "watch": false,
-        "buildTarget": "console:esbuild"
+        "buildTarget": "assistant:esbuild"
       }
     },
     "serve-static": {
       "continuous": true,
       "executor": "@nx/web:file-server",
       "options": {
-        "buildTarget": "console:build",
-        "staticFilePath": "dist/apps/console/browser",
+        "buildTarget": "assistant:build",
+        "staticFilePath": "dist/apps/assistant/browser",
         "spa": true
       }
     },
@@ -64,16 +64,16 @@
       "outputs": ["{options.outputPath}"],
       "defaultConfiguration": "production",
       "options": {
-        "outputPath": "dist/apps/console",
-        "browser": "apps/console/src/main.ts",
-        "tsConfig": "apps/console/tsconfig.app.json",
+        "outputPath": "dist/apps/assistant",
+        "browser": "apps/assistant/src/main.ts",
+        "tsConfig": "apps/assistant/tsconfig.app.json",
         "assets": [
           {
             "glob": "**/*",
-            "input": "apps/console/public"
+            "input": "apps/assistant/public"
           }
         ],
-        "styles": ["apps/console/src/styles.css"],
+        "styles": ["apps/assistant/src/styles.css"],
         "polyfills": ["es-module-shims"]
       },
       "configurations": {
@@ -81,7 +81,7 @@
           "budgets": [
             {
               "type": "initial",
-              "maximumWarning": "650kb",
+              "maximumWarning": "500kb",
               "maximumError": "1mb"
             },
             {
@@ -104,15 +104,14 @@
       "executor": "@angular/build:dev-server",
       "defaultConfiguration": "development",
       "options": {
-        "port": 4200,
-        "proxyConfig": "apps/console/proxy.conf.js"
+        "port": 4201
       },
       "configurations": {
         "production": {
-          "buildTarget": "console:esbuild:production"
+          "buildTarget": "assistant:esbuild:production"
         },
         "development": {
-          "buildTarget": "console:esbuild:development"
+          "buildTarget": "assistant:esbuild:development"
         }
       }
     }

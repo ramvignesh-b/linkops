@@ -194,8 +194,11 @@ production build drops the dev build's unminified code and Angular's extra
 dev-mode checks, so production should cost at most this, not more.
 
 **Bundle size**, the other number of this kind: `nx build console
---configuration=production` reports an initial bundle of **616.33 kB raw,
-132.12 kB estimated transfer** (gzip).
+--configuration=production` reports an initial bundle of **125.65 kB raw,
+36.77 kB estimated transfer** (gzip) — well inside the 650 kB budget. The
+triage panel accounts for most of the drop from an earlier build of this
+Console: it is no longer part of this bundle, or of any chunk this build
+produces, at any size — see [The Assistant remote](#the-assistant-remote).
 
 ### Where things live
 
@@ -210,11 +213,83 @@ dev-mode checks, so production should cost at most this, not more.
 | `libs/server/a2ui-agent` | `POST /api/agent/ui` and the agent behind it — a one-method interface behind two implementations: the deterministic stub, and `GeminiAgent`, which asks Gemini for a recommendation and builds the Surface carrying it from the same builders the stub uses ([ADR-0012](docs/adr/0012-the-model-recommends-the-server-renders.md)). Both read the Roster and Telemetry through the providers every other feature shares and answer an Action with a confirmation Surface rather than a write, and `selectA2uiAgent`, the provider seam configuration chooses an implementation at. |
 | `libs/server/config` | The configuration seam — `API_PORT`, `SWAGGER_UI_ENABLED`, `ASSISTANT_PROVIDER`, `ASSISTANT_PROVIDER_KEY`, `ASSISTANT_MODEL` — validated for coherence at boot, not presence, and the one typed place every other library reads the result through. See [Configuration](#configuration). |
 | `apps/api` | Module registration only. |
-| `libs/console/data-access` | The Console's wire and its state: the stream client behind the `EVENT_SOURCE` token, schema validation of every frame, the Tick coalescer, and `FleetStore` — the Roster, the latest Sample per Link, the Summary and the connection state, holding all three of the first as one value so a Tick applies as one write. `TransportFailure` and `applyListQuery` — the Console's filter-and-sort over the store — live here too, alongside the triage panel's `AssistantClient` and `AssistantSession`, and `AssistantFailure`, the third kind of failure for a Server reply that answered but could not be used. |
+| `libs/console/data-access` | The Console's wire and its state: the stream client behind the `EVENT_SOURCE` token, schema validation of every frame, the Tick coalescer, and `FleetStore` — the Roster, the latest Sample per Link, the Summary and the connection state, holding all three of the first as one value so a Tick applies as one write. `TransportFailure` and `applyListQuery` — the Console's filter-and-sort over the store — live here too, alongside the triage panel's `AssistantClient` and `AssistantSession`, `AssistantFailure` (the third kind of failure, for a Server reply that answered but could not be used), and `ASSISTANT_REMOTE_LOADER` — the token behind fetching the Assistant remote's component, real in production, substituted in tests the same way `EVENT_SOURCE` is. |
 | `libs/console/ui` | Presentational only, domain types in and events out, no store and no router: the Status pill, the Throughput-against-Capacity bar, the Summary Figure tile, the connection banner, the Fleet filter bar, and the A2UI renderer — `lib-a2ui-surface` and its six whitelisted components (`Surface`, `Card`, `Text`, `Button`, `Select`, `Metric`) plus the labelled fallback an unknown or over-bounded one degrades to. |
-| `libs/console/feature-fleet` | The `/links` route: the Fleet list, the Fleet-wide Summary header, the filter/sort controls above it, and the triage panel's composition — the one place on this route permitted to inject state, which is why the panel is composed here rather than in a feature library of its own. |
+| `libs/console/feature-assistant` | The triage panel itself, `AssistantPanel` — the Assistant remote's one exposed component, self-contained: it provides its own `AssistantSession`, opens a conversation on construction, and renders the A2UI Surface it gets back. Imported only by `apps/assistant`, never by `console/feature-fleet` — see [The Assistant remote](#the-assistant-remote). |
+| `libs/console/feature-fleet` | The `/links` route: the Fleet list, the Fleet-wide Summary header, the filter/sort controls above it, and `AssistantWrapper` — fetches the Assistant remote's component and mounts it, with a loading spinner while that fetch is in flight. The one place on this route permitted to inject state; the panel's own state lives inside the remote it mounts, not here. |
 | `libs/console/feature-link-detail` | The `/links/:id` and `/links/:id/edit` routes: one Link's configuration and readings, the Throughput sparkline over its recent history, both modes of the Link form, the version-conflict resolution and the delete. |
-| `apps/console` | The shell, the routes, the providers — including the real `EventSource` factory — and the integration tests that drive the routed Console with only the browser's two network primitives faked. |
+| `apps/console` | The shell, the routes, the providers — including the real `EventSource` factory — the Module Federation host configuration, and the integration tests that drive the routed Console with only the browser's two network primitives faked, plus the one step no test environment can perform: fetching the Assistant remote's code, substituted the same way. |
+| `apps/assistant` | The Assistant remote — a separately built and served Angular application (port 4201) whose only job is exposing `AssistantPanel` as `./Component`. See [The Assistant remote](#the-assistant-remote). |
+
+### The Assistant remote
+
+The triage panel is built and deployed as its own application
+(`apps/assistant`, port 4201) rather than compiled into the Console
+(`apps/console`, port 4200), using [Native
+Federation](https://github.com/angular-architects/module-federation-plugin)
+— Angular's esbuild-based successor to webpack Module Federation, and
+Nx's own recommended replacement for its now-deprecated Angular Module
+Federation generators on this Nx version. Neither app's `federation.config.mjs`
+declares the other statically: `apps/console` reads
+`public/federation.manifest.json` at startup and registers `assistant` as a
+name it can ask for, and nothing more, until an operator actually asks for
+it. This is a **Component Remote**: the host never routes to the Assistant
+or renders it on a URL — `AssistantWrapper` (`console/feature-fleet`) calls
+`loadRemoteModule('assistant', './Component')` directly, inside the Fleet
+route's existing `@defer` block, once an operator clicks "Ask the
+assistant."
+
+**Why a remote at all, and not `console/feature-fleet` importing a
+`console/feature-assistant` library directly:** `@nx/enforce-module-boundaries`
+bans one `type:feature` library from importing another
+([ADR-0011](docs/adr/0011-feature-composition-through-ui-and-data-access.md)),
+and that rule looks at the static import graph — a `loadRemoteModule` call
+naming `'assistant'` by string is not an import of
+`@linkops/console/feature-assistant` at all, so there is no edge for the
+rule to see. `libs/console/feature-assistant` is a real `type:feature`
+library; `apps/assistant` is the only project that imports it.
+
+**What loading it looks like to an operator:** clicking "Ask the assistant"
+mounts `AssistantWrapper`, which calls `loadRemoteModule` and shows an
+explicit spinner for as long as that promise is pending — a real network
+fetch of `apps/assistant`'s built code, the first time it happens per page
+load. Once it resolves, `AssistantWrapper` mounts the returned component
+with `NgComponentOutlet`, which opens its own conversation and renders
+exactly as it did before this extraction; closing the panel unmounts it,
+and reopening fetches nothing a second time — the remote's code, once
+downloaded, is cached like any other script.
+
+**What is shared, and why it has to be:** both `federation.config.mjs`
+files declare `@linkops/shared/domain` and `@linkops/console/data-access`
+as singletons (`sharedMappings`, alongside the framework packages `shareAll`
+already covers). This is not an optimisation — it is correctness.
+`console/data-access` defines `AssistantInvalidPayloadError`, and
+`AssistantSession` tells it apart from a transport failure with
+`instanceof`. Built into two separate bundles — one for the host, one for
+the remote — `AssistantInvalidPayloadError` would be two distinct classes,
+and that check would silently stop matching the moment the two were ever
+loaded together without this. Sharing the library keeps it one class,
+loaded once, regardless of which side of the federation boundary
+constructs or catches it.
+
+**Version Skew.** The risk Module Federation is usually warned about is a
+host and a remote built at different times, deployed independently, and
+now disagreeing about a contract — the host renders a route the currently-
+live remote's version has since removed, or the remote exposes a
+`Component` whose inputs changed underneath a host still built against the
+old ones. `apps/console` and `apps/assistant` do not carry that risk today:
+they are built from the same commit, in the same Nx workspace (`pnpm
+build`), and there is exactly one deployment path — nothing here deploys
+`apps/assistant` on its own release train yet. The two are, in effect,
+flashed together: whatever host code is live was built against whatever
+remote code is live, because there has never been another combination to
+be live. `AssistantPanel`'s public surface — the one export
+`federation.config.mjs` exposes as `./Component` — is what a future
+independent deployment of `apps/assistant` would need to keep stable
+against, the same way `libs/shared/domain`'s wire schemas are what keeps
+the Console and the API honest across their own boundary; until that
+independent deployment exists, this monorepo's single build-and-release
+step is the defense.
 
 ## API reference
 
@@ -780,13 +855,16 @@ pnpm install
 pnpm test      # nx run-many -t test
 pnpm lint      # nx run-many -t lint
 pnpm build     # nx run-many -t build
-pnpm start     # serves both apps/api and apps/console
+pnpm start     # serves apps/api, apps/console and apps/assistant together
 ```
 
-The Console is then at <http://localhost:4200> and the API at
-<http://localhost:3000>; the dev server proxies `/api` to it, so the Console
-calls the same relative paths in development that it would served next to the
-API.
+The Console is then at <http://localhost:4200>, the Assistant remote at
+<http://localhost:4201>, and the API at <http://localhost:3000>; the
+Console's dev server proxies `/api` to it, so the Console calls the same
+relative paths in development that it would served next to the API.
+`apps/assistant` has to be running for "Ask the assistant" to resolve
+— see [The Assistant remote](#the-assistant-remote) — which is why `pnpm
+start` serves all three; `pnpm serve:console` on its own does not.
 
 ## 12. Decisions, gaps and next steps
 
