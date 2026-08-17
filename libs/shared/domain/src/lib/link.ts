@@ -20,9 +20,9 @@ export type ChannelWidthMhz = z.infer<typeof channelWidthMhzSchema>;
 
 export const linkSchema = z.object({
   id: linkIdSchema,
-  name: z.string().min(3).max(40),
-  siteA: z.string(),
-  siteB: z.string(),
+  name: z.string().trim().min(3).max(40),
+  siteA: z.string().trim().min(1, 'Site A is required'),
+  siteB: z.string().trim().min(1, 'Site B is required'),
   band: bandSchema,
   mode: modeSchema,
   capacityMbps: z.number().min(10).max(1000),
