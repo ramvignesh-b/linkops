@@ -20,6 +20,42 @@ the store, with `NoSampleTelemetryPort` for the case where none exists yet.
 `selectWorstLinkId` picks the link the fleet summary points an operator at, and
 `Clock` is injected so time is a dependency rather than an ambient fact.
 
+One Tick, end to end:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant T as setInterval, 1 Hz
+    participant S as Simulator
+    participant R as LinkRepository
+    participant St as TelemetrySampleStore
+    participant B as TelemetryBus
+
+    T->>S: tick()
+    S->>R: findAll()
+    R-->>S: the Roster, as it is right now
+    loop once per Link on that Roster
+        S->>St: latestSample(id)
+        St-->>S: the previous Sample, or null
+        Note over S: stepEpisode, then<br/>simulateNextSample
+        S->>St: push(sample)
+        Note over St: the Link's RingBuffer evicts<br/>its oldest past 300
+    end
+    S->>B: one publication carrying every Sample
+```
+
+The Roster read at step 2 happens on every Tick and is never cached, which is
+what makes deleting a Link safe: the Link is simply absent from the next read,
+so there is no ghost telemetry to prune and no cleanup path to forget. The
+Degradation Episode map is rebuilt from that same read for the same reason.
+
+Note what the bus does *not* do. It is an RxJS `Subject` — it carries a Tick and
+derives nothing. Status and the KPI block are computed downstream, in
+`SimulatorTelemetryPort.summary()` here and in `FleetEventStream` over in
+[`server-stream-api`](../stream-api/README.md), both calling `deriveStatus` from
+[`shared-domain`](../../shared/domain/README.md). The bus is the seam that keeps
+sample *production* from knowing anything about how samples are published.
+
 See the root [README](../../../README.md#8-how-it-works) for the end-to-end
 flow, and
 [ADR-0010](../../../docs/adr/0010-telemetry-retention-is-capacity-bounded.md)

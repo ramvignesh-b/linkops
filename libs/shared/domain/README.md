@@ -13,6 +13,28 @@ from the same declaration, so a bound like `capacityMbps` is stated once.
 `sortLinks` and `matchesBandAndQuery` are the list rules, shared so the server
 and an optimistic client agree on ordering.
 
+The rule itself, thresholds and all:
+
+```mermaid
+flowchart TD
+    START["deriveStatus(link, latestSample, now)"] --> HAS{"is there a Sample<br/>at all?"}
+    HAS -- no --> STALE["down<br/>reason: stale"]
+    HAS -- yes --> AGE{"age >= STALE_AFTER_MS<br/>(5s)?"}
+    AGE -- yes --> STALE
+    AGE -- no --> UP{"snrDb >= 18 dB<br/>and throughput >= 60%<br/>of capacityMbps?"}
+    UP -- yes --> ISUP["up"]
+    UP -- no --> DEG{"snrDb >= 10 dB<br/>and throughput >= 20%<br/>of capacityMbps?"}
+    DEG -- yes --> ISDEG["degraded"]
+    DEG -- no --> METRICS["down<br/>reason: metrics"]
+```
+
+Staleness is checked before the thresholds, and that order is the point: a
+five-second-old Sample cannot testify that a Link is healthy *now*, however good
+the numbers in it are. The two ways to be `down` stay distinguishable on the wire
+because `LinkStatus` is a discriminated union carrying `reason` — `stale` means
+nothing is arriving, `metrics` means readings are arriving and they are bad, and
+an operator needs to tell those apart.
+
 zod is the only runtime dependency this library has, and the only one it may
 have: Nest, Angular and RxJS are banned imports here, which is what makes the
 status rule testable without booting a framework.
