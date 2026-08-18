@@ -167,6 +167,37 @@ Nothing is skipped and no test sleeps. The SSE tests open a real HTTP connection
 with `fetch` and an `AbortController`, because the behaviour under test is a
 client that disconnects.
 
+### The gates, and what each one prevents
+
+Nothing below is advisory. Each one blocks a commit or fails a build.
+
+**On commit** — two hooks, installed by `prepare: husky` when you `pnpm install`:
+
+| Hook | Runs | Prevents |
+| ---- | ---- | -------- |
+| `pre-commit` | [`lint-staged`](.lintstagedrc.json): `eslint --fix`, then `prettier --write`, on staged files only | Formatting noise arriving as its own diff on top of a real change, and a lint failure reaching CI that could have been fixed in place |
+| `commit-msg` | [`commitlint`](commitlint.config.mjs), conventional commits | A history that cannot be read, filtered or released from by change type |
+
+**On every pull request and every push to `main`** —
+[`ci.yml`](.github/workflows/ci.yml) runs the four commands above, and is
+stricter than the local run in three places:
+
+| Step | Why it is stricter |
+| ---- | ------------------ |
+| `pnpm lint --max-warnings=0` | The two rules below are warnings locally, so an unfinished edit is never blocked. This flag is the whole reason that is safe: a warning cannot land |
+| `commitlint --from <root commit> --to HEAD` | Checks the entire history rather than the new commits, which is why the checkout asks for `fetch-depth: 0` rather than the default shallow clone |
+| `node tools/verify-bundle-budget.mjs … 500 1000` | Serves the real gzipped production build and drives a headless browser at it, rather than trusting filenames — see [§12](#measured-not-asserted) for what that corrected |
+
+**The rules worth knowing about**, in [`eslint.config.mjs`](eslint.config.mjs).
+The module-boundary rules are separate and live in [§7](#7-project-structure):
+
+| Rule | Setting | Reason |
+| ---- | ------- | ------ |
+| `complexity` | warn at **10** | A function past ten branches needs more test cases than anyone writes for it, and this repo's hard parts are meant to be pure functions that are cheap to test exhaustively |
+| `max-lines-per-function` | warn at **50**, off in `*.spec.ts` | A `describe` block is a function to the rule and not to a reader |
+| `no-console` | error, with `warn` and `error` allowed; off under `tools/` | The API logs through Nest's `Logger`. The two exceptions exist for the config module's fail-fast path, which runs before that `Logger` does; a CLI script printing to stdout is doing its job, not leaving a stray debug line |
+| `@typescript-eslint/consistent-type-imports` | on for the Console, **off** for `apps/api` and `libs/server` | Nest resolves constructor dependencies from the `design:paramtypes` metadata the compiler emits, and a type-only import erases the reference that metadata is built from. The autofix compiles and builds, then fails at boot with "Nest can't resolve dependencies" — the worst place to find out. The rule buys bundle hygiene, and the server has no bundle budget |
+
 ## 7. Project structure
 
 An Nx workspace: **three thin app shells and fourteen libraries.** Apps wire
@@ -239,42 +270,53 @@ machine-readable dump).
 flowchart TD
     subgraph Server ["Server (NestJS)"]
         direction TB
-        SIM[Simulator]
-        RB[RingBuffer]
-        BUS[TelemetryBus]
-        API[Stream API]
+        REPO[("LinkRepository<br/>the Roster")]
+        SIM["Simulator<br/>one setInterval, 1 Hz"]
+        STORE["TelemetrySampleStore<br/>one RingBuffer per Link,<br/>300 Samples each"]
+        BUS["TelemetryBus<br/>an RxJS Subject"]
+        PORT["SimulatorTelemetryPort<br/>deriveStatus, FleetSummary"]
+        API["FleetEventStream<br/>server/stream-api"]
 
-        SIM -- "Generates 1 Sample/sec" --> BUS
-        SIM -- "Evicts oldest (300 limit)" --> RB
-        BUS -- "Derives Status & KPIs" --> API
+        SIM -- "reads the Roster fresh, every Tick" --> REPO
+        SIM -- "push(sample)" --> STORE
+        SIM -- "publishes one Tick" --> BUS
+        BUS -- "one notification per Tick" --> API
+        API -- "withDerivedStatus, summary" --> PORT
+        PORT -- "latest Samples" --> STORE
+        PORT -- "Roster" --> REPO
     end
 
-    subgraph Client ["Browser (Angular)"]
+    subgraph Client ["Browser (Angular, zoneless)"]
         direction TB
-        SSE[EventSource]
-        STORE[FleetStore]
-        UI[Components: Signals]
+        SSE["EventSource, via FleetStream"]
+        FSTORE["FleetStore"]
+        UI["Components (signals)"]
     end
 
-    API -- "SSE (Batched per Tick):\nlink.telemetry\nlink.status\nfleet.summary" --> SSE
-    API -- "On Reconnect:\nfleet.snapshot" --> SSE
-    RB -. "Historical Data\nGET .../telemetry" .-> UI
+    API -- "SSE, batched per Tick:<br/>link.telemetry<br/>link.status<br/>fleet.summary" --> SSE
+    API -- "on connect and on reconnect:<br/>fleet.snapshot" --> SSE
+    STORE -. "GET /api/links/:id/telemetry<br/>sparkline history" .-> UI
 
-    SSE -- "1 Write/Tick" --> STORE
-    STORE -- "Renders" --> UI
+    SSE -- "one write per Tick" --> FSTORE
+    FSTORE -- "renders" --> UI
 ```
 
 | Question | Answer |
 | -------- | ------ |
 | Where telemetry is generated | The `Simulator`, one sample per link per second (1 Hz) |
-| How a sample reaches the browser | Simulator → `TelemetryBus` → `stream-api`, which batches the whole tick into one `link.telemetry` payload over SSE → the browser's `EventSource` → `FleetStore` |
-| Where link status is derived | **Server only**, in `deriveStatus`. The client treats the wire status as authoritative, so a dropped stream can never masquerade as a dead link |
+| How a sample reaches the browser | The `Simulator` publishes the whole tick's samples in one `TelemetryBus` notification → `stream-api` frames it as one `link.telemetry` payload over SSE → the browser's `EventSource` → `FleetStore` |
+| Where link status is derived | **Server only**, in [`deriveStatus`](libs/shared/domain/src/lib/derive-status.ts) — called from `FleetEventStream` for the per-link events and from `SimulatorTelemetryPort.summary()` for the KPI block. Never on the `TelemetryBus`, which only carries a tick. The client treats the wire status as authoritative, so a dropped stream can never masquerade as a dead link |
 | Where client state lives | `FleetStore` — the browser's single source of truth. Exactly one write per tick, pushed to the UI through signals |
 | What happens on reconnect | No replay. The server publishes a fresh `fleet.snapshot`; the client drops stale state and resynchronises from it |
 
 Reasoning: [ADR-0004](docs/adr/0004-batched-per-tick-sse-framing.md) (batched
 framing), [ADR-0005](docs/adr/0005-snapshot-on-connect-no-telemetry-replay.md)
 (no replay).
+
+Each half is drawn in more detail where it lives: the server's Tick in
+[`server-telemetry`](libs/server/telemetry/README.md), the browser's coalescing
+in [`console-data-access`](libs/console/data-access/README.md), and the status
+rule itself in [`shared-domain`](libs/shared/domain/README.md).
 
 ### The Assistant remote
 
