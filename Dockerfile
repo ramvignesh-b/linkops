@@ -77,6 +77,8 @@ COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
 # Copy custom Nginx configuration template (supports dynamic API_URL via envsubst)
 COPY deploy/nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY deploy/nginx/35-substitute-base-href.sh /docker-entrypoint.d/35-substitute-base-href.sh
+RUN chmod +x /docker-entrypoint.d/35-substitute-base-href.sh
 COPY deploy/nginx/40-generate-manifest.sh /docker-entrypoint.d/40-generate-manifest.sh
 RUN chmod +x /docker-entrypoint.d/40-generate-manifest.sh
 
