@@ -106,9 +106,23 @@ export function mountApiExplorer(
 ): void {
   const patchDocumentOnRequest = (
     req: unknown,
-    _res: unknown,
+    res: unknown,
     doc: OpenAPIObject,
   ): OpenAPIObject => {
+    // `swagger-ui-init.js` is generated per request — it carries the document,
+    // and its `servers` entry depends on headers this very hook reads. Its
+    // name ends in `.js`, though, so every layer that classifies cacheability
+    // by file extension (Cloudflare's default static rules, an `expires 1y`
+    // nginx block, the browser itself) will happily treat it as immutable and
+    // stop asking the origin. The symptom is indistinguishable from the hook
+    // being broken: a stale document served forever, and no request ever
+    // reaching this line to say so. Same reasoning as the no-store rule the
+    // Console's nginx applies to `remoteEntry.json`.
+    (res as { setHeader?: (name: string, value: string) => void })?.setHeader?.(
+      'Cache-Control',
+      'no-store, no-cache, must-revalidate',
+    );
+
     const headers = (
       req as { headers?: Record<string, string | string[] | undefined> }
     )?.headers;

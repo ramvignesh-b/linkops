@@ -42,6 +42,9 @@ async function bootstrap() {
   // `resolveForwardedPrefix`.
   const openApiDocument = buildOpenApiDocument(app);
   app.getHttpAdapter().get(`/${globalPrefix}/openapi.json`, (req, res) => {
+    // Generated per request, same as `swagger-ui-init.js` — see the note in
+    // `mountApiExplorer`. Nothing between here and the Client may cache it.
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     const prefix = resolveForwardedPrefix(req.headers);
     Logger.log(
       `raw document: host=${String(req.headers['host'] ?? '?')} ` +

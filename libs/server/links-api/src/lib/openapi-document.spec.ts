@@ -243,6 +243,26 @@ describe('the explorer under a path prefix', () => {
     expect(js).toMatch(/"servers":\s*\[\s*\]/);
   });
 
+  // The document is generated per request, so any cache between the Server
+  // and the Client defeats the whole mechanism — and the file is named
+  // `.js`, which is exactly what extension-based cache rules key on.
+  it('forbids caching the generated document', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [ServerLinksApiModule],
+    }).compile();
+    const freshApp = moduleRef.createNestApplication();
+
+    mountApiExplorer(freshApp, buildOpenApiDocument(freshApp));
+    await freshApp.init();
+
+    const response = await request(freshApp.getHttpServer()).get(
+      '/api/swagger-ui-init.js',
+    );
+    await freshApp.close();
+
+    expect(response.headers['cache-control']).toMatch(/no-store/);
+  });
+
   // The header is the braces; this is the belt. Nothing sets
   // X-Forwarded-Prefix by default, so the explorer has to be able to work out
   // its own mount point in the browser from `window.location`.
