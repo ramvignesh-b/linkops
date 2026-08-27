@@ -53,8 +53,22 @@ export function mountApiExplorer(
       ) => {
         const headers = (req as { headers?: Record<string, string | string[]> })
           ?.headers;
+
+        // 1. Try standard proxy prefix header
         const prefix = headers?.['x-forwarded-prefix'];
-        const basePath = Array.isArray(prefix) ? prefix[0] : prefix;
+        let basePath = Array.isArray(prefix) ? prefix[0] : prefix;
+
+        // 2. Fallback to extracting from Referer if the proxy stripped the path silently
+        if (!basePath && headers?.['referer']) {
+          try {
+            const referer = Array.isArray(headers['referer'])
+              ? headers['referer'][0]
+              : headers['referer'];
+            basePath = new URL(referer).pathname.replace(/\/$/, '');
+          } catch (_) {
+            // Invalid referer URL, ignore
+          }
+        }
 
         Logger.warn('[Swagger Init] Headers: ' + JSON.stringify(headers));
         Logger.warn('[Swagger Init] Extracted basePath: ' + basePath);

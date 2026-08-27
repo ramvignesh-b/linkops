@@ -38,7 +38,18 @@ async function bootstrap() {
   const openApiDocument = buildOpenApiDocument(app);
   app.getHttpAdapter().get(`/${globalPrefix}/openapi.json`, (req, res) => {
     const prefix = req.headers['x-forwarded-prefix'];
-    const basePath = Array.isArray(prefix) ? prefix[0] : prefix;
+    let basePath = Array.isArray(prefix) ? prefix[0] : prefix;
+
+    if (!basePath && req.headers['referer']) {
+      try {
+        const referer = Array.isArray(req.headers['referer'])
+          ? req.headers['referer'][0]
+          : req.headers['referer'];
+        basePath = new URL(referer).pathname.replace(/\/$/, '');
+      } catch (_) {
+        // Invalid referer
+      }
+    }
 
     Logger.warn('[Swagger JSON] Headers: ' + JSON.stringify(req.headers));
     Logger.warn('[Swagger JSON] Extracted basePath: ' + basePath);
