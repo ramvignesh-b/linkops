@@ -44,5 +44,11 @@ export function mountApiExplorer(
   app: INestApplication,
   document: OpenAPIObject,
 ): void {
-  SwaggerModule.setup('api', app, document);
+  SwaggerModule.setup('api', app, document, {
+    swaggerOptions: {
+      // Force Swagger UI to fetch the custom endpoint mounted in main.ts
+      // instead of its default absolute path, so X-Forwarded-Prefix is applied
+      url: './openapi.json',
+    },
+  });
 }
