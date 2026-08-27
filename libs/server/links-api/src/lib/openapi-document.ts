@@ -46,6 +46,16 @@ export function mountApiExplorer(
 ): void {
   SwaggerModule.setup('api', app, document, {
     swaggerOptions: {
+      patchDocumentOnRequest: (
+        req: unknown,
+        _res: unknown,
+        doc: OpenAPIObject,
+      ) => {
+        const prefix = (req as { headers?: Record<string, string | string[]> })
+          ?.headers?.['x-forwarded-prefix'];
+        const basePath = Array.isArray(prefix) ? prefix[0] : prefix;
+        return basePath ? { ...doc, servers: [{ url: basePath }] } : doc;
+      },
       // Force Swagger UI to fetch the custom endpoint mounted in main.ts
       // instead of its default absolute path, so X-Forwarded-Prefix is applied
       url: './openapi.json',
