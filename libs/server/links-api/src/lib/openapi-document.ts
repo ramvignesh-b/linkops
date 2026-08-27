@@ -1,4 +1,4 @@
-import type { INestApplication } from '@nestjs/common';
+import { Logger, type INestApplication } from '@nestjs/common';
 import {
   DocumentBuilder,
   SwaggerModule,
@@ -51,14 +51,16 @@ export function mountApiExplorer(
         _res: unknown,
         doc: OpenAPIObject,
       ) => {
-        const prefix = (req as { headers?: Record<string, string | string[]> })
-          ?.headers?.['x-forwarded-prefix'];
+        const headers = (req as { headers?: Record<string, string | string[]> })
+          ?.headers;
+        const prefix = headers?.['x-forwarded-prefix'];
         const basePath = Array.isArray(prefix) ? prefix[0] : prefix;
+
+        Logger.warn('[Swagger Init] Headers: ' + JSON.stringify(headers));
+        Logger.warn('[Swagger Init] Extracted basePath: ' + basePath);
+
         return basePath ? { ...doc, servers: [{ url: basePath }] } : doc;
       },
-      // Force Swagger UI to fetch the custom endpoint mounted in main.ts
-      // instead of its default absolute path, so X-Forwarded-Prefix is applied
-      url: './openapi.json',
     },
   });
 }

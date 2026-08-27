@@ -40,6 +40,9 @@ async function bootstrap() {
     const prefix = req.headers['x-forwarded-prefix'];
     const basePath = Array.isArray(prefix) ? prefix[0] : prefix;
 
+    Logger.warn('[Swagger JSON] Headers: ' + JSON.stringify(req.headers));
+    Logger.warn('[Swagger JSON] Extracted basePath: ' + basePath);
+
     res.json(
       basePath
         ? { ...openApiDocument, servers: [{ url: basePath }] }
