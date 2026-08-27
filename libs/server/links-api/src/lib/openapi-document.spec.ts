@@ -3,7 +3,12 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { SchemaObject } from '@nestjs/swagger/dist/interfaces/open-api-spec.interface';
 import { ServerLinksApiModule } from './server-links-api.module';
-import { buildOpenApiDocument, mountApiExplorer } from './openapi-document';
+import {
+  buildOpenApiDocument,
+  mountApiExplorer,
+  resolveForwardedPrefix,
+  withBasePath,
+} from './openapi-document';
 
 /**
  * Boots the real module — same as `server-links-api.module.spec.ts` — so the
@@ -129,5 +134,144 @@ describe('buildOpenApiDocument', () => {
     await freshApp.close();
 
     expect(response.status).not.toBe(404);
+  });
+});
+
+describe('resolveForwardedPrefix', () => {
+  it('reads the prefix a reverse proxy declares', () => {
+    expect(resolveForwardedPrefix({ 'x-forwarded-prefix': '/linkops' })).toBe(
+      '/linkops',
+    );
+  });
+
+  it('takes the first value when the header arrives repeated', () => {
+    expect(
+      resolveForwardedPrefix({ 'x-forwarded-prefix': ['/linkops', '/other'] }),
+    ).toBe('/linkops');
+  });
+
+  it('normalises a missing leading slash and a trailing one', () => {
+    expect(resolveForwardedPrefix({ 'x-forwarded-prefix': 'linkops/' })).toBe(
+      '/linkops',
+    );
+  });
+
+  // A proxy that mounts the API at the root has nothing to declare, and a
+  // `servers: [{ url: '/' }]` entry is not harmless: Swagger UI would resolve
+  // every operation against it and produce a doubled slash.
+  it.each(['', '   ', '/', '//'])(
+    'treats %o as no prefix at all',
+    (header: string) => {
+      expect(
+        resolveForwardedPrefix({ 'x-forwarded-prefix': header }),
+      ).toBeUndefined();
+    },
+  );
+
+  it('is undefined when the proxy sends no such header', () => {
+    expect(
+      resolveForwardedPrefix({ referer: 'https://host/linkops/api/' }),
+    ).toBeUndefined();
+  });
+
+  it('is undefined when there are no headers at all', () => {
+    expect(resolveForwardedPrefix(undefined)).toBeUndefined();
+  });
+});
+
+describe('withBasePath', () => {
+  const document = { openapi: '3.0.0', paths: {} } as never;
+
+  it('declares the prefix as the only server', () => {
+    expect(withBasePath(document, '/linkops')).toMatchObject({
+      servers: [{ url: '/linkops' }],
+    });
+  });
+
+  it('leaves the document alone when there is no prefix', () => {
+    expect(withBasePath(document, undefined)).not.toHaveProperty('servers');
+  });
+
+  it('never mutates the shared boot-time document', () => {
+    withBasePath(document, '/linkops');
+
+    expect(document).not.toHaveProperty('servers');
+  });
+});
+
+/**
+ * These assert against `swagger-ui-init.js` — the file the explorer page
+ * actually loads, with the document inlined into it — rather than against the
+ * document object, because the bug they exist to catch lives entirely in how
+ * the options reach @nestjs/swagger. `SwaggerCustomOptions` declares
+ * `patchDocumentOnRequest` at the top level; every read site in 11.4.6's
+ * implementation looks for it under `swaggerOptions`. Passing it the way the
+ * type describes typechecks cleanly, throws nothing, and silently never runs.
+ * Only the served artefact shows the difference.
+ */
+describe('the explorer under a path prefix', () => {
+  async function initJs(headers: Record<string, string>): Promise<string> {
+    const moduleRef = await Test.createTestingModule({
+      imports: [ServerLinksApiModule],
+    }).compile();
+    const freshApp = moduleRef.createNestApplication();
+
+    mountApiExplorer(freshApp, buildOpenApiDocument(freshApp));
+    await freshApp.init();
+
+    const response = await request(freshApp.getHttpServer())
+      .get('/api/swagger-ui-init.js')
+      .set(headers);
+    await freshApp.close();
+
+    return response.text;
+  }
+
+  // The explorer resolves its own base path in the browser, so the document
+  // it is handed must not name a server at all. A proxy that reports the
+  // whole public API base (`/linkops/api`) rather than the segment it
+  // stripped (`/linkops`) would otherwise double the `/api` every path in
+  // this document already carries.
+  it.each([
+    ['nothing forwarded', {}],
+    ['a correct prefix', { 'X-Forwarded-Prefix': '/linkops' }],
+    [
+      'a prefix that double-counts /api',
+      { 'X-Forwarded-Prefix': '/linkops/api' },
+    ],
+  ])('leaves servers empty given %s', async (_label, headers) => {
+    const js = await initJs(headers as Record<string, string>);
+
+    expect(js).toMatch(/"servers":\s*\[\s*\]/);
+  });
+
+  // The document is generated per request, so any cache between the Server
+  // and the Client defeats the whole mechanism — and the file is named
+  // `.js`, which is exactly what extension-based cache rules key on.
+  it('forbids caching the generated document', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [ServerLinksApiModule],
+    }).compile();
+    const freshApp = moduleRef.createNestApplication();
+
+    mountApiExplorer(freshApp, buildOpenApiDocument(freshApp));
+    await freshApp.init();
+
+    const response = await request(freshApp.getHttpServer()).get(
+      '/api/swagger-ui-init.js',
+    );
+    await freshApp.close();
+
+    expect(response.headers['cache-control']).toMatch(/no-store/);
+  });
+
+  // The header is the braces; this is the belt. Nothing sets
+  // X-Forwarded-Prefix by default, so the explorer has to be able to work out
+  // its own mount point in the browser from `window.location`.
+  it('ships a request interceptor that can recover the prefix client-side', async () => {
+    const js = await initJs({});
+
+    expect(js).toContain('requestInterceptor');
+    expect(js).toContain('window.location.pathname');
   });
 });

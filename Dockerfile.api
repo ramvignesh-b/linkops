@@ -1,0 +1,54 @@
+# syntax=docker/dockerfile:1
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 1: Base Node.js environment
+# ─────────────────────────────────────────────────────────────────────────────
+FROM node:24-alpine AS base
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable && corepack prepare pnpm@11.21.0 --activate
+WORKDIR /app
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2: Dependencies and API Build
+# ─────────────────────────────────────────────────────────────────────────────
+FROM base AS builder
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .nvmrc ./
+RUN pnpm install --frozen-lockfile
+
+COPY nx.json tsconfig.base.json ./
+COPY apps/ ./apps/
+COPY libs/ ./libs/
+
+RUN pnpm nx build api
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 3: API Production Runtime
+# ─────────────────────────────────────────────────────────────────────────────
+FROM node:24-alpine AS runner
+ENV NODE_ENV=production
+ENV API_PORT=3000
+
+RUN apk add --no-cache curl
+
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable && corepack prepare pnpm@11.21.0 --activate
+
+WORKDIR /app
+
+COPY pnpm-workspace.yaml ./
+COPY --from=builder /app/dist/apps/api/package.json ./package.json
+COPY --from=builder /app/dist/apps/api/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY --from=builder /app/dist/apps/api/main.js ./main.js
+COPY --from=builder /app/dist/apps/api/main.js.map ./main.js.map
+
+RUN pnpm install --prod --frozen-lockfile && pnpm store prune
+
+USER node
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=5s --timeout=5s --start-period=10s --retries=5 \
+  CMD curl -f http://127.0.0.1:${API_PORT:-3000}/api/fleet/summary || exit 1
+
+CMD ["node", "main.js"]

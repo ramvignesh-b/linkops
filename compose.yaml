@@ -1,0 +1,61 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    image: linkops-api:latest
+    container_name: linkops-api
+    restart: unless-stopped
+    environment:
+      - API_PORT=3000
+      - SWAGGER_UI_ENABLED=${SWAGGER_UI_ENABLED:-true}
+      - ASSISTANT_PROVIDER
+      - ASSISTANT_PROVIDER_KEY
+      - ASSISTANT_MODEL
+    expose:
+      - '3000'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://127.0.0.1:3000/api/fleet/summary']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - linkops-network
+
+  console:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: console
+    image: linkops-console:latest
+    container_name: linkops-console
+    restart: unless-stopped
+    ports:
+      - '${PORT:-${CONSOLE_PORT:-8080}}:80'
+    expose:
+      - '80'
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '--quiet',
+          '--tries=1',
+          '--spider',
+          'http://127.0.0.1/healthz',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - linkops-network
+
+networks:
+  linkops-network:
+    driver: bridge

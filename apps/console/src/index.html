@@ -3,7 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <title>LinkOps Console</title>
-    <base href="/" />
+    <script>
+      (function () {
+        var path = window.location.pathname;
+        var base = '/';
+        var match = path.match(/^(.*\/)(?:links|agent)(?:\/|$)/);
+        if (match) {
+          base = match[1];
+        } else if (path !== '/' && path !== '') {
+          base = path.endsWith('/') ? path : path + '/';
+        }
+        document.write('<base href="' + base + '" />');
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
   </head>

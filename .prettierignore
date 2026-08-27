@@ -9,3 +9,4 @@
 # when one cell changes, so a one-line edit reads as a whole-table rewrite —
 # and these documents are edited by exact text match, which that breaks.
 *.md
+pnpm-lock.yaml
