@@ -36,11 +36,16 @@ async function bootstrap() {
   // The generated document is always served, no config flag required — see
   // ADR-0006.
   const openApiDocument = buildOpenApiDocument(app);
-  app
-    .getHttpAdapter()
-    .get(`/${globalPrefix}/openapi.json`, (_req, res) =>
-      res.json(openApiDocument),
+  app.getHttpAdapter().get(`/${globalPrefix}/openapi.json`, (req, res) => {
+    const prefix = req.headers['x-forwarded-prefix'];
+    const basePath = Array.isArray(prefix) ? prefix[0] : prefix;
+
+    res.json(
+      basePath
+        ? { ...openApiDocument, servers: [{ url: basePath }] }
+        : openApiDocument,
     );
+  });
 
   // The interactive explorer is gated behind SWAGGER_UI_ENABLED — an
   // unauthenticated, DELETE-capable explorer is a different proposition on a
