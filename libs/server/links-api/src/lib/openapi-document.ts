@@ -45,36 +45,34 @@ export function mountApiExplorer(
   document: OpenAPIObject,
 ): void {
   SwaggerModule.setup('api', app, document, {
-    swaggerOptions: {
-      patchDocumentOnRequest: (
-        req: unknown,
-        _res: unknown,
-        doc: OpenAPIObject,
-      ) => {
-        const headers = (req as { headers?: Record<string, string | string[]> })
-          ?.headers;
+    patchDocumentOnRequest: (
+      req: unknown,
+      _res: unknown,
+      doc: OpenAPIObject,
+    ) => {
+      const headers = (req as { headers?: Record<string, string | string[]> })
+        ?.headers;
 
-        // 1. Try standard proxy prefix header
-        const prefix = headers?.['x-forwarded-prefix'];
-        let basePath = Array.isArray(prefix) ? prefix[0] : prefix;
+      // 1. Try standard proxy prefix header
+      const prefix = headers?.['x-forwarded-prefix'];
+      let basePath = Array.isArray(prefix) ? prefix[0] : prefix;
 
-        // 2. Fallback to extracting from Referer if the proxy stripped the path silently
-        if (!basePath && headers?.['referer']) {
-          try {
-            const referer = Array.isArray(headers['referer'])
-              ? headers['referer'][0]
-              : headers['referer'];
-            basePath = new URL(referer).pathname.replace(/\/$/, '');
-          } catch (_) {
-            // Invalid referer URL, ignore
-          }
+      // 2. Fallback to extracting from Referer if the proxy stripped the path silently
+      if (!basePath && headers?.['referer']) {
+        try {
+          const referer = Array.isArray(headers['referer'])
+            ? headers['referer'][0]
+            : headers['referer'];
+          basePath = new URL(referer).pathname.replace(/\/$/, '');
+        } catch (_) {
+          // Invalid referer URL, ignore
         }
+      }
 
-        Logger.warn('[Swagger Init] Headers: ' + JSON.stringify(headers));
-        Logger.warn('[Swagger Init] Extracted basePath: ' + basePath);
+      Logger.warn('[Swagger Init] Headers: ' + JSON.stringify(headers));
+      Logger.warn('[Swagger Init] Extracted basePath: ' + basePath);
 
-        return basePath ? { ...doc, servers: [{ url: basePath }] } : doc;
-      },
+      return basePath ? { ...doc, servers: [{ url: basePath }] } : doc;
     },
   });
 }
