@@ -3,7 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <title>assistant</title>
-    <base href="/" />
+    <script>
+      (function () {
+        var path = window.location.pathname;
+        var base = '/';
+        if (path !== '/' && path !== '') {
+          base = path.endsWith('/') ? path : path + '/';
+        }
+        document.write('<base href="' + base + '" />');
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
   </head>
