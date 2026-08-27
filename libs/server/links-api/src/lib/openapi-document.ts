@@ -104,20 +104,39 @@ export function mountApiExplorer(
   app: INestApplication,
   document: OpenAPIObject,
 ): void {
+  // Everything @nestjs/swagger is handed in `swaggerOptions` is serialised
+  // into `swagger-ui-init.js` and shipped to the browser, comments included,
+  // so the reasoning lives out here rather than inside the function bodies.
+  //
+  // `patchDocumentOnRequest` is used for its side effects. The document needs
+  // no patching — `servers` is already empty and stays that way, deliberately:
+  //
+  //   Every hop in front of this Server has an opinion about the path, and any
+  //   of them may report the whole public API base rather than the segment it
+  //   stripped. Being handed `/linkops/api` when this document's paths already
+  //   begin with `/api` yields `/linkops/api/api/...` for every operation, and
+  //   chasing that back through the hops is unbounded — there is no header the
+  //   Server can trust. The browser cannot be lied to about where it is: the
+  //   explorer is served at `<prefix>/api` by construction, so `window.location`
+  //   names the prefix exactly. An empty `servers` is what hands the job to
+  //   `requestInterceptor`, which derives and applies it there.
+  //
+  // What the hook does do is stop the response being cached. It is generated
+  // per request, but its name ends in `.js`, so every layer that decides
+  // cacheability by extension — a CDN's default static rules, an `expires 1y`
+  // nginx block, the browser — treats it as immutable and stops asking the
+  // origin. The symptom is indistinguishable from the hook being broken: a
+  // stale document served forever, with no request arriving to say so. Same
+  // reasoning as the no-store rule the Console's nginx applies to
+  // `remoteEntry.json`.
+  //
+  // `GET /api/openapi.json` still honours `X-Forwarded-Prefix`: a codegen
+  // client fetching the raw document has no browser to ask.
   const patchDocumentOnRequest = (
     req: unknown,
     res: unknown,
     doc: OpenAPIObject,
   ): OpenAPIObject => {
-    // `swagger-ui-init.js` is generated per request — it carries the document,
-    // and its `servers` entry depends on headers this very hook reads. Its
-    // name ends in `.js`, though, so every layer that classifies cacheability
-    // by file extension (Cloudflare's default static rules, an `expires 1y`
-    // nginx block, the browser itself) will happily treat it as immutable and
-    // stop asking the origin. The symptom is indistinguishable from the hook
-    // being broken: a stale document served forever, and no request ever
-    // reaching this line to say so. Same reasoning as the no-store rule the
-    // Console's nginx applies to `remoteEntry.json`.
     (res as { setHeader?: (name: string, value: string) => void })?.setHeader?.(
       'Cache-Control',
       'no-store, no-cache, must-revalidate',
@@ -126,20 +145,13 @@ export function mountApiExplorer(
     const headers = (
       req as { headers?: Record<string, string | string[] | undefined> }
     )?.headers;
-    const prefix = resolveForwardedPrefix(headers);
-
-    // One line per explorer load, and the only place that proves this hook is
-    // wired at all. Its absence from the logs is itself the diagnosis: it
-    // means @nestjs/swagger never called us, which is exactly the failure the
-    // dual-position option below exists to prevent. Named headers only — a
-    // full dump puts `authorization` and `cookie` in the log.
     logger.log(
       `explorer document: host=${String(headers?.['host'] ?? '?')} ` +
-        `x-forwarded-prefix=${String(headers?.['x-forwarded-prefix'] ?? '(unset)')} ` +
-        `-> servers=${prefix ?? '(none; browser fallback applies)'}`,
+        `x-forwarded-prefix=${resolveForwardedPrefix(headers) ?? '(unset)'} ` +
+        '-> servers=[] (ignored; the browser resolves its own base path)',
     );
 
-    return withBasePath(doc, prefix);
+    return withBasePath(doc, undefined);
   };
 
   SwaggerModule.setup(EXPLORER_MOUNT, app, document, {
@@ -156,19 +168,11 @@ export function mountApiExplorer(
       patchDocumentOnRequest,
 
       /**
-       * Runs in the BROWSER. @nestjs/swagger serialises this function into
-       * `swagger-ui-init.js` with `.toString()`, so its body must be entirely
-       * self-contained: no imports, no module constants, no closure over
-       * anything above — hence the inlined `'/api'` rather than
-       * `EXPLORER_MOUNT`.
-       *
-       * This is the belt to `patchDocumentOnRequest`'s braces. That hook
-       * depends on a proxy actually sending `X-Forwarded-Prefix`, which is
-       * not set by default anywhere; this one derives the prefix from the one
-       * fact that is always true and always available — the explorer is being
-       * served at `<prefix>/api`, so the page's own location names the
-       * prefix. Mounted at the root the prefix is empty and every request
-       * passes through untouched.
+       * Runs in the BROWSER — serialised with `.toString()`, so its body must
+       * be self-contained: no imports, no module constants, no closure over
+       * anything above. Hence the inlined `'/api'` rather than
+       * `EXPLORER_MOUNT`. See the note above `patchDocumentOnRequest` for why
+       * this, and not a forwarded header, decides the base path.
        */
       requestInterceptor: (req: { url: string }) => {
         const mount = '/api';

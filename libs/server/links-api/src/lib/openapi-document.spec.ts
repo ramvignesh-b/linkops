@@ -227,18 +227,20 @@ describe('the explorer under a path prefix', () => {
     return response.text;
   }
 
-  it('declares X-Forwarded-Prefix as the server, so operations resolve under it', async () => {
-    const js = await initJs({ 'X-Forwarded-Prefix': '/linkops' });
-
-    expect(js).toMatch(/"servers":\s*\[\s*\{\s*"url":\s*"\/linkops"\s*\}\s*\]/);
-  });
-
-  // `DocumentBuilder.build()` always emits a `servers` key, so the no-prefix
-  // state is an empty array rather than an absent key — and an empty array is
-  // exactly what makes Swagger UI resolve operations against the origin root,
-  // which is the 404 this whole mechanism exists to prevent.
-  it('leaves servers empty when nothing forwarded a prefix', async () => {
-    const js = await initJs({});
+  // The explorer resolves its own base path in the browser, so the document
+  // it is handed must not name a server at all. A proxy that reports the
+  // whole public API base (`/linkops/api`) rather than the segment it
+  // stripped (`/linkops`) would otherwise double the `/api` every path in
+  // this document already carries.
+  it.each([
+    ['nothing forwarded', {}],
+    ['a correct prefix', { 'X-Forwarded-Prefix': '/linkops' }],
+    [
+      'a prefix that double-counts /api',
+      { 'X-Forwarded-Prefix': '/linkops/api' },
+    ],
+  ])('leaves servers empty given %s', async (_label, headers) => {
+    const js = await initJs(headers as Record<string, string>);
 
     expect(js).toMatch(/"servers":\s*\[\s*\]/);
   });
