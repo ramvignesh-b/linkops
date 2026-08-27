@@ -9,6 +9,8 @@ import { NestFactory } from '@nestjs/core';
 import {
   buildOpenApiDocument,
   mountApiExplorer,
+  resolveForwardedPrefix,
+  withBasePath,
 } from '@linkops/server/links-api';
 import { loadEnvironment } from '@linkops/server/config';
 import { AppModule } from './app/app.module';
@@ -34,31 +36,20 @@ async function bootstrap() {
   app.setGlobalPrefix(globalPrefix);
 
   // The generated document is always served, no config flag required — see
-  // ADR-0006.
+  // ADR-0006. `servers` is resolved per request rather than baked in at boot:
+  // the same image is served at the root locally and under a path prefix
+  // behind a reverse proxy, and only the proxy knows which. See
+  // `resolveForwardedPrefix`.
   const openApiDocument = buildOpenApiDocument(app);
   app.getHttpAdapter().get(`/${globalPrefix}/openapi.json`, (req, res) => {
-    const prefix = req.headers['x-forwarded-prefix'];
-    let basePath = Array.isArray(prefix) ? prefix[0] : prefix;
-
-    if (!basePath && req.headers['referer']) {
-      try {
-        const referer = Array.isArray(req.headers['referer'])
-          ? req.headers['referer'][0]
-          : req.headers['referer'];
-        basePath = new URL(referer).pathname.replace(/\/$/, '');
-      } catch (_) {
-        // Invalid referer
-      }
-    }
-
-    Logger.warn('[Swagger JSON] Headers: ' + JSON.stringify(req.headers));
-    Logger.warn('[Swagger JSON] Extracted basePath: ' + basePath);
-
-    res.json(
-      basePath
-        ? { ...openApiDocument, servers: [{ url: basePath }] }
-        : openApiDocument,
+    const prefix = resolveForwardedPrefix(req.headers);
+    Logger.log(
+      `raw document: host=${String(req.headers['host'] ?? '?')} ` +
+        `x-forwarded-prefix=${String(req.headers['x-forwarded-prefix'] ?? '(unset)')} ` +
+        `-> servers=${prefix ?? '(none)'}`,
+      'OpenApi',
     );
+    res.json(withBasePath(openApiDocument, prefix));
   });
 
   // The interactive explorer is gated behind SWAGGER_UI_ENABLED — an
@@ -73,6 +64,16 @@ async function bootstrap() {
   await app.listen(environment.API_PORT);
   Logger.log(
     `🚀 Application is running on: http://localhost:${environment.API_PORT}/${globalPrefix}`,
+  );
+  // Printed unconditionally at boot so a live deployment can be told apart
+  // from a stale image without reproducing anything: if this line is absent
+  // from the logs, the running container predates the base-path work and no
+  // amount of proxy configuration will change what the explorer does.
+  Logger.log(
+    `raw document at /${globalPrefix}/openapi.json; explorer ` +
+      `${environment.SWAGGER_UI_ENABLED ? `at /${globalPrefix}` : 'disabled'}; ` +
+      'base path from X-Forwarded-Prefix, with a browser-side fallback',
+    'OpenApi',
   );
 }
 

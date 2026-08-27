@@ -7,6 +7,16 @@ import {
 import { cleanupOpenApiDoc } from 'nestjs-zod';
 
 /**
+ * Where the explorer is mounted, relative to the global `api` prefix's own
+ * root. Kept as a constant for the server-side reader; the browser-side
+ * interceptor in `mountApiExplorer` has to inline the same literal, for the
+ * reason documented there.
+ */
+const EXPLORER_MOUNT = 'api';
+
+const logger = new Logger('OpenApi');
+
+/**
  * Assembles the OpenAPI document from the app's own controllers and DTOs —
  * the same `createZodDto`-generated classes the endpoints validate with, so
  * this document cannot describe an API that does not exist. See ADR-0006.
@@ -28,6 +38,56 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
 }
 
 /**
+ * Reads the public path prefix this API is mounted under from
+ * `X-Forwarded-Prefix`, the conventional header a reverse proxy sets when it
+ * serves an upstream from a subpath.
+ *
+ * The document's own paths are written from the API's root (`/links`,
+ * `/fleet/summary`), so a Client that reaches the server at
+ * `https://host/linkops/api/...` cannot resolve them without being told about
+ * `/linkops`. The Server has no way to discover that on its own: from inside
+ * the container the request arrives as `/api/...` with the prefix already
+ * stripped. Only the proxy knows, so only the proxy can say.
+ *
+ * Deliberately the *only* signal consulted. An earlier version fell back to
+ * parsing `Referer`, which was wrong twice over: it yields the explorer's own
+ * path (`/linkops/api`) rather than the mount prefix (`/linkops`), doubling
+ * the `/api` segment; and it makes a published contract vary by whichever page
+ * happened to request it. When the header is absent the document simply
+ * carries no `servers` entry, which is honest — the Server genuinely does not
+ * know. The explorer stays usable regardless, via the browser-side
+ * interceptor in `mountApiExplorer`.
+ */
+export function resolveForwardedPrefix(
+  headers: Record<string, string | string[] | undefined> | undefined,
+): string | undefined {
+  const raw = headers?.['x-forwarded-prefix'];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = value.trim().replace(/\/+$/, '');
+  if (trimmed === '') {
+    return undefined;
+  }
+
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
+
+/**
+ * Returns the document with a `servers` entry naming `prefix`, or the document
+ * untouched when there is no prefix to declare. Never mutates the original —
+ * one document object is built at boot and shared across every request.
+ */
+export function withBasePath(
+  document: OpenAPIObject,
+  prefix: string | undefined,
+): OpenAPIObject {
+  return prefix ? { ...document, servers: [{ url: prefix }] } : document;
+}
+
+/**
  * Mounts the interactive Swagger explorer at `GET /api`, over a document
  * `buildOpenApiDocument` already built. Split out from that function so
  * `main.ts` can gate the call behind `SWAGGER_UI_ENABLED` — an
@@ -44,35 +104,80 @@ export function mountApiExplorer(
   app: INestApplication,
   document: OpenAPIObject,
 ): void {
-  SwaggerModule.setup('api', app, document, {
-    patchDocumentOnRequest: (
-      req: unknown,
-      _res: unknown,
-      doc: OpenAPIObject,
-    ) => {
-      const headers = (req as { headers?: Record<string, string | string[]> })
-        ?.headers;
+  const patchDocumentOnRequest = (
+    req: unknown,
+    _res: unknown,
+    doc: OpenAPIObject,
+  ): OpenAPIObject => {
+    const headers = (
+      req as { headers?: Record<string, string | string[] | undefined> }
+    )?.headers;
+    const prefix = resolveForwardedPrefix(headers);
 
-      // 1. Try standard proxy prefix header
-      const prefix = headers?.['x-forwarded-prefix'];
-      let basePath = Array.isArray(prefix) ? prefix[0] : prefix;
+    // One line per explorer load, and the only place that proves this hook is
+    // wired at all. Its absence from the logs is itself the diagnosis: it
+    // means @nestjs/swagger never called us, which is exactly the failure the
+    // dual-position option below exists to prevent. Named headers only — a
+    // full dump puts `authorization` and `cookie` in the log.
+    logger.log(
+      `explorer document: host=${String(headers?.['host'] ?? '?')} ` +
+        `x-forwarded-prefix=${String(headers?.['x-forwarded-prefix'] ?? '(unset)')} ` +
+        `-> servers=${prefix ?? '(none; browser fallback applies)'}`,
+    );
 
-      // 2. Fallback to extracting from Referer if the proxy stripped the path silently
-      if (!basePath && headers?.['referer']) {
-        try {
-          const referer = Array.isArray(headers['referer'])
-            ? headers['referer'][0]
-            : headers['referer'];
-          basePath = new URL(referer).pathname.replace(/\/$/, '');
-        } catch (_) {
-          // Invalid referer URL, ignore
+    return withBasePath(doc, prefix);
+  };
+
+  SwaggerModule.setup(EXPLORER_MOUNT, app, document, {
+    // Passed in BOTH positions on purpose. `SwaggerCustomOptions` declares
+    // `patchDocumentOnRequest` at the top level, but every read site in
+    // @nestjs/swagger 11.4.6's implementation looks for it at
+    // `options.swaggerOptions.patchDocumentOnRequest` — see `serveSwaggerUi`
+    // and `serveDefinitions` in `dist/swagger-module.js`. Following the
+    // published type alone leaves the hook silently dead, with no error and
+    // no `servers` entry. Supplying both survives the library correcting the
+    // mismatch in either direction.
+    patchDocumentOnRequest,
+    swaggerOptions: {
+      patchDocumentOnRequest,
+
+      /**
+       * Runs in the BROWSER. @nestjs/swagger serialises this function into
+       * `swagger-ui-init.js` with `.toString()`, so its body must be entirely
+       * self-contained: no imports, no module constants, no closure over
+       * anything above — hence the inlined `'/api'` rather than
+       * `EXPLORER_MOUNT`.
+       *
+       * This is the belt to `patchDocumentOnRequest`'s braces. That hook
+       * depends on a proxy actually sending `X-Forwarded-Prefix`, which is
+       * not set by default anywhere; this one derives the prefix from the one
+       * fact that is always true and always available — the explorer is being
+       * served at `<prefix>/api`, so the page's own location names the
+       * prefix. Mounted at the root the prefix is empty and every request
+       * passes through untouched.
+       */
+      requestInterceptor: (req: { url: string }) => {
+        const mount = '/api';
+        const here = window.location.pathname.replace(/\/+$/, '');
+        if (!here.endsWith(mount)) {
+          return req;
         }
-      }
 
-      Logger.warn('[Swagger Init] Headers: ' + JSON.stringify(headers));
-      Logger.warn('[Swagger Init] Extracted basePath: ' + basePath);
+        const prefix = here.slice(0, here.length - mount.length);
+        if (prefix === '') {
+          return req;
+        }
 
-      return basePath ? { ...doc, servers: [{ url: basePath }] } : doc;
+        const url = new URL(req.url, window.location.origin);
+        const alreadyPrefixed =
+          url.pathname === prefix || url.pathname.startsWith(prefix + '/');
+        if (url.origin === window.location.origin && !alreadyPrefixed) {
+          url.pathname = prefix + url.pathname;
+          req.url = url.toString();
+        }
+
+        return req;
+      },
     },
   });
 }
